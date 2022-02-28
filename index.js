@@ -2,6 +2,7 @@
 import { io } from "socket.io-client";
 import { PeerConnect } from "./src/PeerConnect";
 import debug from "debug";
+import { config } from "./src/config";
 
 const s = debug('Socket')
 const p = debug('Peer')
@@ -24,7 +25,7 @@ class Bun {
 
         this.peers = new Map();
 
-        this.iceCandidates = []
+        this.iceCandidates = new Map();
 
         // Connect to socket
         this.socket = io(this.serverURL)
@@ -37,7 +38,26 @@ class Bun {
         // New Peer
         this.socket.on('new-peer-connected', (id) => {
             s('New Peer Connected. Waiting for an offer.')
-            this.peers.set(id, new PeerConnect(id))
+            this.peers.set(id, new RTCPeerConnection(config))
+            const peer = this.peers.get(id)
+
+            peer.onicecandidate = (event) => {
+                if (event.candidate) {
+                    rp('ICE Candidate', event)
+                    this.socket.emit('candidates', {
+                        from: event.currentTarget.from,
+                        to: event.currentTarget.to,
+                        candidates: [event.candidate]
+                    })
+                }
+            }
+            peer.ontrack = (event) => {
+                rp(`TRACK RECIEVED : ${event}`)
+            }
+
+            peer.from = this.socket.id
+            peer.to = id
+            s(peer)
         })
 
         // PARTICIPANT
@@ -65,12 +85,6 @@ class Bun {
                 peer.setRemoteDescription(sdp)
                 p('Offer SDP set as Remote Description.')
 
-                rp('Adding Tracks.')
-                this.streams.forEach(track => {
-                    peer.addTrack(track)
-                });
-                rp('Tracks Added.')
-
                 peer.createAnswer({
                     offerToReceiveAudio: true,
                     offerToReceiveVideo: true,
@@ -80,24 +94,20 @@ class Bun {
                     peer.setLocalDescription(sdp);
                     p('Answer SDP set as Local Description.')
 
-                    peer.onicecandidate = (event) => {
-                        if (event.candidate) {
-                            peer.iceCandidates.push(event.candidate)
-                        }
-                    }
-
-                    peer.ontrack = (event) => {
-                        pc(`TRACK RECIEVED : ${event}`)
-                    }
+                    s('Send Answer SDP to Remote Peer.')
+                    this.socket.emit('answer-sdp', {
+                        to: fromPeer,
+                        from: this.socket.id,
+                        room: this.room,
+                        sdp
+                    })
 
                     setTimeout(() => {
-                        s('Send Answer SDP to Remote Peer.')
-                        this.socket.emit('answer-sdp', {
-                            to: fromPeer,
-                            from: this.socket.id,
-                            room: this.room,
-                            sdp
-                        })
+                        rp('Adding Tracks.')
+                        this.streams.forEach(track => {
+                            peer.addTrack(track)
+                        });
+                        rp('Tracks Added.')
                     }, this.buffer)
                 })
             }
@@ -112,48 +122,21 @@ class Bun {
                 rp('Set Answer as Remote Description.')
                 peer.setRemoteDescription(sdp)
 
-                peer.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        rp('Adding Ice Candidates.')
-                        peer.iceCandidates.push(event.candidate)
-                    }
-                }
-
-                peer.ontrack = (event) => {
-                    pc(`TRACK RECIEVED : ${event}`)
-                }
-
-                setTimeout(() => {
-                    s('Sending Candidates to Remote Peer.')
-                    this.socket.emit('send-candidates', {
-                        to: fromPeer,
-                        from: this.socket.id,
-                        type: "send",
-                        candidates: peer.iceCandidates
-                    })
-                }, this.buffer)
+                rp('Adding Tracks.')
+                this.streams.forEach(track => {
+                    peer.addTrack(track)
+                });
+                rp('Tracks Added.')
             }
         })
 
         // add candidates
-        this.socket.on('candidates', ({ to, from, type, candidates }) => {
+        this.socket.on('candidates', ({ to, from, candidates }) => {
             const peer = this.peers.get(from)
-            const fromPeer = from
             rp('Adding Ice Candidates from Remote Peer.')
             candidates.forEach(candidate => {
                 peer.addIceCandidate(candidate)
             });
-            if (type === 'send') {
-                setTimeout(() => {
-                    s('Sending Candidates to Remote Peer.')
-                    this.socket.emit('recv-candidates', {
-                        to: fromPeer,
-                        from: this.socket.id,
-                        type: 'recv',
-                        candidates: peer.iceCandidates
-                    })
-                }, this.buffer)
-            }
         })
 
         // Peer disconnected
@@ -179,8 +162,30 @@ class Bun {
                 s('Room Joined', peerList)
                 if (peerList.length > 1) {
                     s('Peers List Recieved')
-                    peerList.forEach(peer => {
-                        peer !== this.socket.id && this.peers.set(peer, new PeerConnect(peer.socketId))
+                    peerList.forEach(pid => {
+                        if (pid !== this.socket.id) {
+                            this.peers.set(pid, new RTCPeerConnection(config))
+                            const newPeer = this.peers.get(pid)
+
+                            newPeer.onicecandidate = (event) => {
+                                if (event.candidate) {
+                                    rp('ICE Candidate', event)
+                                    this.socket.emit('candidates', {
+                                        from: event.currentTarget.from,
+                                        to: event.currentTarget.to,
+                                        candidates: [event.candidate]
+                                    })
+                                }
+                            }
+
+                            newPeer.ontrack = (event) => {
+                                rp(`TRACK RECIEVED`, event)
+                            }
+
+                            newPeer.from = this.socket.id
+                            newPeer.to = pid
+                            s(newPeer)
+                        }
                     });
                     rp('Establishing Peer Connection to Remote Peer.')
                     this.connect()
@@ -216,12 +221,6 @@ class Bun {
                     }).then((sdp) => {
                         rp('Set Offer as Local Description.')
                         peer.setLocalDescription(sdp)
-
-                        rp('Adding Tracks.')
-                        this.streams.forEach(track => {
-                            peer.addTrack(track)
-                        });
-                        rp('Tracks Added.')
 
                         setTimeout(() => {
                             s('Sending Offer to Remote Peer.')
