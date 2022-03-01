@@ -10,10 +10,10 @@
   <body
     class="w-[100vw] h-[100vh] flex flex-col items-center justify-evenly bg-stone-200"
   >
-    <div class="w-full flex items-center justify-center">
+    <div class="absolute top-4">
       <h1 class="text-8xl font-bold uppercase text-green-50">121</h1>
     </div>
-    <div
+    <main
       class="flex-grow flex flex-col flex-wrap items-center justify-center space-y-4"
     >
       <video
@@ -23,12 +23,51 @@
         controls
         muted
       ></video>
-    </div>
+    </main>
     <script src="../dist/bundle.js"></script>
     <script>
-      const bun = new Bun.Bun();
+      const findOrCreateVid = (n) => {
+        let vid = document.querySelector(`#remote-video-${n}`);
+        if (!vid) {
+          vid = document.createElement("video");
+          vid.setAttribute(
+            "class",
+            "remote w-80 h-48 bg-white rounded-2xl shadow-lg"
+          );
+          vid.setAttribute("id", `remote-video-${n}`);
+          vid.controls = true;
+          vid.autoplay = true;
+          vid.muted = true;
+          document.querySelector("main").append(vid);
+        }
+        return vid;
+      };
+
+      const addTrackToVideo = (event) => {
+        let vid = findOrCreateVid(event.target.to);
+        try {
+          vid.srcObject = event.streams[0];
+        } catch (error) {
+          vid.src = URL.createObjectURL(event.streams[0]);
+        }
+      };
+
+      const bun = new Bun();
       bun.getMedia(true, false);
       bun.join("abcdef");
+
+      bun.on("new-peer", (event) => {
+        console.log("New Peer", bun.peers);
+      });
+
+      bun.on("new-remote-track", (event) => {
+        console.log(event);
+        addTrackToVideo(event);
+      });
+
+      bun.on("peer-left", (to) => {
+        document.querySelector(`#remote-video-${to}`).remove();
+      });
     </script>
   </body>
 </html>

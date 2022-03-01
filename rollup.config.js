@@ -1,4 +1,6 @@
 import resolve from '@rollup/plugin-node-resolve';
+import builtins from 'rollup-plugin-node-builtins';
+// import { nodeResolve } from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import babel from "@rollup/plugin-babel";
 import { terser } from 'rollup-plugin-terser';
@@ -13,12 +15,14 @@ export default {
         format: 'iife'
     },
     plugins: [
+        builtins(),
+        // nodeResolve(),
         resolve({
             browser: true,
         }),
         commonjs(),
         babel({
-            include: ["**.js", "node_modules/**"],
+            include: ["**.js", "node_modules/**", "node_modules/events"],
             babelHelpers: "bundled",
             presets: [["@babel/preset-env", { "useBuiltIns": "usage" }]],
         }),

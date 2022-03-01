@@ -23,5 +23,4 @@ export const config = {
         urls,
     }],
     iceCandidatePoolSize: 10,
-    bundlePolicy: 'max-compat',
 }

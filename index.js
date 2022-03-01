@@ -1,25 +1,26 @@
 
 import { io } from "socket.io-client";
-import { PeerConnect } from "./src/PeerConnect";
 import debug from "debug";
 import { config } from "./src/config";
+import EventEmitter from "events";
 
 const s = debug('Socket')
 const p = debug('Peer')
 const rp = debug('Remote')
 
 // Create a Global Object to store state.
-class Bun {
-    constructor(accountSid, apiKey) {
+class Bun extends EventEmitter {
+    constructor(accountSid = null, apiKey = null) {
+        super();
         this.accountSid = accountSid;
         this.apiKey = apiKey;
-        this.serverURL = 'http://localhost:3000'
+        this.serverURL = 'https://a83b-223-236-222-122.ngrok.io'
 
         this.streams = [];
 
-        this.buffer = 1000;
-
         this.room = ''
+
+        this.buffer = 50
 
         this.remoteStreams = new Map()
 
@@ -51,8 +52,32 @@ class Bun {
                     })
                 }
             }
+
+            rp('Adding Tracks.')
+            this.streams.getTracks().forEach(track => {
+                peer.addTrack(track, this.streams)
+            });
+            rp('Tracks Added.')
+
             peer.ontrack = (event) => {
                 rp(`TRACK RECIEVED : ${event}`)
+                this.remoteStreams.set(event.target.from, event.track)
+                this.emit('new-remote-track', event)
+            }
+
+            peer.onconnectionstatechange = (event) => {
+                switch (event) {
+                    case "connected":
+                        rp('The connection has become fully connected.')
+                        this.emit('new-peer', event)
+                        break;
+                    case "failed":
+                        rp('One or more transports has terminated unexpectedly or in an error')
+                        break;
+                    case "closed":
+                        rp('The connection has been closed')
+                        break;
+                }
             }
 
             peer.from = this.socket.id
@@ -101,14 +126,6 @@ class Bun {
                         room: this.room,
                         sdp
                     })
-
-                    setTimeout(() => {
-                        rp('Adding Tracks.')
-                        this.streams.forEach(track => {
-                            peer.addTrack(track)
-                        });
-                        rp('Tracks Added.')
-                    }, this.buffer)
                 })
             }
         })
@@ -121,29 +138,35 @@ class Bun {
                 const fromPeer = from
                 rp('Set Answer as Remote Description.')
                 peer.setRemoteDescription(sdp)
-
-                rp('Adding Tracks.')
-                this.streams.forEach(track => {
-                    peer.addTrack(track)
-                });
-                rp('Tracks Added.')
             }
         })
 
         // add candidates
-        this.socket.on('candidates', ({ to, from, candidates }) => {
+        this.socket.on('candidates', async ({ to, from, candidates }) => {
             const peer = this.peers.get(from)
             rp('Adding Ice Candidates from Remote Peer.')
-            candidates.forEach(candidate => {
-                peer.addIceCandidate(candidate)
-            });
+            try {
+                for (const candidate of candidates) {
+                    await new Promise((resolve, reject) => {
+                        peer.addIceCandidate(candidate).then(resolve).catch(reject)
+                    })
+                }
+            } catch (error) {
+                rp(error.message)
+            }
         })
 
         // Peer disconnected
         this.socket.on('peer-disconnected', (id) => {
             s('Socket disconnected')
+            let peer = this.peers.get(id)
+
+            s(peer)
+            this.emit('peer-left', peer.to)
+
             p('Close Remote Peer Connection')
-            this.peers.get(id).close()
+            peer.close()
+
             p('Remove Remote Peer')
             this.peers.delete(id)
         })
@@ -178,8 +201,31 @@ class Bun {
                                 }
                             }
 
+                            rp('Adding Tracks.')
+                            this.streams.getTracks().forEach(track => {
+                                newPeer.addTrack(track, this.streams)
+                            });
+                            rp('Tracks Added.')
+
                             newPeer.ontrack = (event) => {
-                                rp(`TRACK RECIEVED`, event)
+                                rp(`TRACK RECIEVED : ${event}`)
+                                this.remoteStreams.set(event.target.from, event.streams[0])
+                                this.emit('new-remote-track', event)
+                            }
+
+                            newPeer.onconnectionstatechange = (event) => {
+                                switch (event) {
+                                    case "connected":
+                                        rp('The connection has become fully connected.')
+                                        this.emit('new-peer', event)
+                                        break;
+                                    case "failed":
+                                        rp('One or more transports has terminated unexpectedly or in an error')
+                                        break;
+                                    case "closed":
+                                        rp('The connection has been closed')
+                                        break;
+                                }
                             }
 
                             newPeer.from = this.socket.id
@@ -251,7 +297,7 @@ class Bun {
         video.onloadedmetadata = (e) => {
             video.play();
         };
-        stream.getTracks().forEach(track => this.streams.push(track))
+        this.streams = stream;
     })
 
     // Get User Screen
@@ -265,4 +311,4 @@ class Bun {
     })
 }
 
-export { Bun }
+export default Bun
