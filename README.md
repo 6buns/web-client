@@ -56,7 +56,7 @@ bun.stop({
 })
 ```
 
-Whenever a new user joins, new-peer event is fired, which can be handled on frontend.
+Whenever a new user joins, `new-peer` event is fired, which can be handled on frontend.
 
 ```js
 bun.on("new-peer", (event) => {
@@ -64,7 +64,7 @@ bun.on("new-peer", (event) => {
 });
 ```
 
-Whenever a new media track is available, new-remote-track event is fired. This event is usually fired when a user in room switched on/off their webcam/mic/screenshare
+Whenever a new media track is available, `new-remote-track` event is fired. This event is usually fired when a user in room switched on/off their webcam/mic/screenshare
 
 ```js
 bun.on("new-remote-track", (event) => {
@@ -72,7 +72,7 @@ bun.on("new-remote-track", (event) => {
 });
 ```
 
-Whenever a user leaves, peer-left event is fired.
+Whenever a user leaves, `peer-left` event is fired.
 
 ```js
 bun.on("peer-left", (id) => {
