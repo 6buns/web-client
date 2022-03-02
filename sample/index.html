@@ -38,6 +38,7 @@
           vid.controls = true;
           vid.autoplay = true;
           vid.muted = true;
+          vid.poster="https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217";
           document.querySelector("main").append(vid);
         }
         return vid;
@@ -68,6 +69,10 @@
       bun.on("peer-left", (to) => {
         document.querySelector(`#remote-video-${to}`).remove();
       });
+
+      setTimeout(() => {
+        bun.shareScreen()
+      }, 10000);
     </script>
   </body>
 </html>

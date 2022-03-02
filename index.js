@@ -65,6 +65,16 @@ class Bun extends EventEmitter {
                 this.emit('new-remote-track', event)
             }
 
+            peer.onnegotiationneeded = (event) => {
+                p(event, peer)
+                peer.createOffer().then(offer => { return peer.setLocalDescription(offer) }).then(() => this.socket.emit('offer-sdp', {
+                    to: peer.to, from: peer.from,
+                    room: this.room, sdp: peer.localDescription
+                })).catch(err => {
+                    console.error(err)
+                })
+            }
+
             peer.onconnectionstatechange = (event) => {
                 switch (event) {
                     case "connected":
@@ -199,6 +209,16 @@ class Bun extends EventEmitter {
                                 this.emit('new-remote-track', event)
                             }
 
+                            newPeer.onnegotiationneeded = (event) => {
+                                rp(event)
+                                newPeer.createOffer().then(offer => { return newPeer.setLocalDescription(offer) }).then(() => this.socket.emit('offer-sdp', {
+                                    to: newPeer.to, from: newPeer.from,
+                                    room: this.room, sdp: peer.localDescription
+                                })).catch(err => {
+                                    console.error(err)
+                                })
+                            }
+
                             newPeer.onconnectionstatechange = (event) => {
                                 switch (event) {
                                     case "connected":
@@ -276,12 +296,15 @@ class Bun extends EventEmitter {
 
     // Get User Screen
     // Add Stream
-    shareScreen = async () => await navigator.mediaDevices.getDisplayMedia({ video: true }).then(stream => {
-        this.streams.forEach((track, index) => {
-            if (track.kind === 'video') {
-                this.streams[index] = stream.getVideoTracks()[0]
-            }
-        })
+    shareScreen = async () => await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(stream => {
+        for (const [id, peer] of this.peers) {
+            console.log(peer)
+            peer.getSenders().forEach(rtpSender => {
+                if (rtpSender.track.kind === 'video') {
+                    rtpSender.replaceTrack(stream.getVideoTracks()[0]).then(() => console.log("Replaced video track from camera to screen")).catch(error => console.log("Could not replace video track: " + error))
+                }
+            })
+        }
     })
 }
 
