@@ -85,20 +85,6 @@ class Bun extends EventEmitter {
             s(peer)
         })
 
-        // PARTICIPANT
-        /******************* */
-        // On Offer,
-        // Set Remote Description
-        // Get User Media
-        // Add Stream
-        // Create Answer
-        /******************* */
-        // Set Local Description
-        /******************* */
-        // Add Ice Candidates
-        /******************* */
-        // Send Ice Candidates
-
         // New Peer Offer SDP
         this.socket.on('offer-sdp', ({ from, to, sdp }) => {
             if (this.peers.has(from)) {
@@ -241,18 +227,6 @@ class Bun extends EventEmitter {
         })
     }
 
-    // INITIATOR
-    /******************* */
-    // Get User Media
-    // Add Stream
-    // Create Offer
-    // Set Local SDP
-    /******************* */
-    // Set Remote Description
-    /******************* */
-    // Send Candidates
-    /******************* */
-    // Add Candidates
 
     connect = async () => {
         for (const [socketId, peer] of this.peers) {
