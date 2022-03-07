@@ -44,10 +44,10 @@ class Bun extends EventEmitter {
             if (id !== this.socket.id) {
 
                 s('New Peer Connected. Waiting for an offer.')
-                // this.peers.set(id, new RTCPeerConnection({
-                //     iceServers: this.iceServers
-                // }))
-                this.peers.set(id, new RTCPeerConnection(config))
+                this.peers.set(id, new RTCPeerConnection({
+                    iceServers: this.iceServers
+                }))
+                // this.peers.set(id, new RTCPeerConnection(config))
                 const peer = this.peers.get(id)
 
                 peer.onicecandidate = (event) => {
@@ -191,10 +191,10 @@ class Bun extends EventEmitter {
                     s('Peers List Recieved')
                     peerList.forEach(pid => {
                         if (pid !== this.socket.id) {
-                            // this.peers.set(pid, new RTCPeerConnection({
-                            //     iceServers: this.iceServers
-                            // }))
-                            this.peers.set(pid, new RTCPeerConnection(config))
+                            this.peers.set(pid, new RTCPeerConnection({
+                                iceServers: this.iceServers
+                            }))
+                            // this.peers.set(pid, new RTCPeerConnection(config))
                             const newPeer = this.peers.get(pid)
 
                             newPeer.onicecandidate = (event) => {
