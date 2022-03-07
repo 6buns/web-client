@@ -22,5 +22,4 @@ export const config = {
     iceServers: [{
         urls,
     }],
-    iceCandidatePoolSize: 10,
 }

@@ -8,147 +8,155 @@ const s = debug('Socket')
 const p = debug('Peer')
 const rp = debug('Remote')
 
-// Create a Global Object to store state.
 class Bun extends EventEmitter {
-    constructor(accountSid = null, apiKey = null) {
+    constructor(apiKey = null) {
         super();
-        this.accountSid = accountSid;
         this.apiKey = apiKey;
-        this.serverURL = 'https://a83b-223-236-222-122.ngrok.io'
-
+        this.serverURL = 'https://p2p.6buns.com/'
+        this.name = Math.random() > 0.5 ? 'a' : 'b'
         this.streams = [];
-
         this.room = ''
-
         this.buffer = 50
-
         this.remoteStreams = new Map()
-
         this.peers = new Map();
-
         this.iceCandidates = new Map();
+        this.iceServers = []
 
         // Connect to socket
-        this.socket = io(this.serverURL)
+        this.socket = io(this.serverURL, {
+            transports: ["websocket", "polling"],
+            auth: {
+                key: this.apiKey
+            }
+        })
 
         // Socket Incoming Handlers
-        this.socket.on('connection', (id) => {
-            s('Socket Connected', { id })
+        this.socket.on('connection', (id, users, iceServers) => {
+            s('Socket Connected', { id, users, iceServers })
+            this.iceServers = [...iceServers]
+            // this.iceServers = [{
+            //     urls: 'stun:stun.6buns.com:3478'
+            // }]
         })
 
         // New Peer
         this.socket.on('new-peer-connected', (id) => {
-            s('New Peer Connected. Waiting for an offer.')
-            this.peers.set(id, new RTCPeerConnection(config))
-            const peer = this.peers.get(id)
+            if (id !== this.socket.id) {
 
-            peer.onicecandidate = (event) => {
-                if (event.candidate) {
-                    rp('ICE Candidate', event)
-                    this.socket.emit('candidates', {
-                        from: event.currentTarget.from,
-                        to: event.currentTarget.to,
-                        candidates: [event.candidate]
-                    })
+                s('New Peer Connected. Waiting for an offer.')
+                // this.peers.set(id, new RTCPeerConnection({
+                //     iceServers: this.iceServers
+                // }))
+                this.peers.set(id, new RTCPeerConnection(config))
+                const peer = this.peers.get(id)
+
+                peer.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        rp('ICE Candidate', event)
+                        this.socket.emit('data', {
+                            from: event.currentTarget.from,
+                            to: event.currentTarget.to,
+                            data: { candidate: event.candidate }
+                        })
+                    }
                 }
-            }
 
-            rp('Adding Tracks.')
-            this.streams.getTracks().forEach(track => {
-                peer.addTrack(track, this.streams)
-            });
-            rp('Tracks Added.')
+                rp('Adding Tracks.')
+                this.streams.getTracks().forEach(track => {
+                    peer.addTrack(track, this.streams)
+                });
+                rp('Tracks Added.')
 
-            peer.ontrack = (event) => {
-                rp(`TRACK RECIEVED : ${event}`)
-                this.remoteStreams.set(event.target.from, event.track)
-                this.emit('new-remote-track', event)
-            }
-
-            peer.onnegotiationneeded = (event) => {
-                p(event, peer)
-                peer.createOffer().then(offer => { return peer.setLocalDescription(offer) }).then(() => this.socket.emit('offer-sdp', {
-                    to: peer.to, from: peer.from,
-                    room: this.room, sdp: peer.localDescription
-                })).catch(err => {
-                    console.error(err)
-                })
-            }
-
-            peer.onconnectionstatechange = (event) => {
-                switch (event) {
-                    case "connected":
-                        rp('The connection has become fully connected.')
-                        this.emit('new-peer', event)
-                        break;
-                    case "failed":
-                        rp('One or more transports has terminated unexpectedly or in an error')
-                        break;
-                    case "closed":
-                        rp('The connection has been closed')
-                        break;
+                peer.ontrack = (event) => {
+                    rp(`TRACK RECIEVED : ${event}`)
+                    this.remoteStreams.set(event.target.from, event.track)
+                    this.emit('new-remote-track', event)
                 }
-            }
 
-            peer.from = this.socket.id
-            peer.to = id
-            s(peer)
-        })
+                peer.makingOffer = false
 
-        // New Peer Offer SDP
-        this.socket.on('offer-sdp', ({ from, to, sdp }) => {
-            if (this.peers.has(from)) {
-                const peer = this.peers.get(from)
-                const fromPeer = from
-                s('Offer SDP recieved.')
+                peer.onnegotiationneeded = async (event) => {
+                    try {
+                        p(event)
+                        peer.makingOffer = true
+                        const offer = await event.currentTarget.createOffer()
+                        if (event.currentTarget.signalingState != "stable") return;
+                        await event.currentTarget.setLocalDescription(offer);
+                        p(event.currentTarget.localDescription, offer)
+                        this.socket.emit('data', {
+                            to: event.currentTarget.to,
+                            from: event.currentTarget.from,
+                            data: { sdp: event.currentTarget.localDescription }
+                        })
+                    } catch (error) {
+                        console.error(error)
+                    } finally {
+                        peer.makingOffer = false
+                    }
+                }
 
-                debug('Peers')(this.peers, from)
-                peer.setRemoteDescription(sdp)
-                p('Offer SDP set as Remote Description.')
+                peer.onconnectionstatechange = (event) => {
+                    switch (event) {
+                        case "connected":
+                            rp('The connection has become fully connected.')
+                            this.emit('new-peer', event)
+                            break;
+                        case "failed":
+                            rp('One or more transports has terminated unexpectedly or in an error')
+                            break;
+                        case "closed":
+                            rp('The connection has been closed')
+                            break;
+                    }
+                }
 
-                peer.createAnswer({
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: true,
-                }).then(sdp => {
-                    p('Answer SDP created.')
-
-                    peer.setLocalDescription(sdp);
-                    p('Answer SDP set as Local Description.')
-
-                    s('Send Answer SDP to Remote Peer.')
-                    this.socket.emit('answer-sdp', {
-                        to: fromPeer,
-                        from: this.socket.id,
-                        room: this.room,
-                        sdp
-                    })
-                })
+                peer.from = this.socket.id
+                peer.to = id
+                peer.name = this.name
+                peer.initiator = false
+                peer.ignoreOffer = false
+                s(peer)
             }
         })
 
-        // Answer SDP
-        this.socket.on('answer-sdp', ({ to, from, room, sdp }) => {
-            rp('Answer Recieved from Remote Peer.')
-            if (sdp.type === 'answer') {
-                const peer = this.peers.get(from)
-                const fromPeer = from
-                rp('Set Answer as Remote Description.')
-                peer.setRemoteDescription(sdp)
-            }
-        })
-
-        // add candidates
-        this.socket.on('candidates', async ({ to, from, candidates }) => {
-            const peer = this.peers.get(from)
-            rp('Adding Ice Candidates from Remote Peer.')
-            try {
-                for (const candidate of candidates) {
-                    await new Promise((resolve, reject) => {
-                        peer.addIceCandidate(candidate).then(resolve).catch(reject)
-                    })
+        this.socket.on('data', async ({ to, from, data: { sdp, candidate } }) => {
+            if (this.peers.has(from) && to === this.socket.id) {
+                try {
+                    const peer = this.peers.get(from)
+                    if (sdp) {
+                        const offerCollision = sdp.type === 'offer' && (peer.makingOffer || peer.signalingState !== 'stable')
+                        peer.ignoreOffer = !peer.initiator && offerCollision
+                        if (peer.ignoreOffer) return;
+                        if (offerCollision) {
+                            await Promise.all([
+                                peer.setLocalDescription({ type: "rollback" }),
+                                peer.setRemoteDescription(sdp)
+                            ]);
+                        } else {
+                            p('Answer Recieved', sdp)
+                            await peer.setRemoteDescription(sdp);
+                        }
+                        if (sdp.type == "offer") {
+                            await peer.setLocalDescription(await peer.createAnswer());
+                            this.socket.emit('data', {
+                                to: from,
+                                from: to,
+                                data: { sdp: peer.localDescription }
+                            });
+                            p('Answer Sent', peer.localDescription)
+                        }
+                    } else if (candidate) {
+                        try {
+                            await peer.addIceCandidate(candidate);
+                            p('Added Ice Candidate', candidate)
+                        } catch (e) {
+                            if (!peer.ignoreOffer) p(e);
+                            else p('Should be ignored', e, candidate, this.peers.has(from), to === this.socket.id)
+                        }
+                    };
+                } catch (error) {
+                    s(error)
                 }
-            } catch (error) {
-                rp(error.message)
             }
         })
 
@@ -183,16 +191,19 @@ class Bun extends EventEmitter {
                     s('Peers List Recieved')
                     peerList.forEach(pid => {
                         if (pid !== this.socket.id) {
+                            // this.peers.set(pid, new RTCPeerConnection({
+                            //     iceServers: this.iceServers
+                            // }))
                             this.peers.set(pid, new RTCPeerConnection(config))
                             const newPeer = this.peers.get(pid)
 
                             newPeer.onicecandidate = (event) => {
                                 if (event.candidate) {
                                     rp('ICE Candidate', event)
-                                    this.socket.emit('candidates', {
+                                    this.socket.emit('data', {
                                         from: event.currentTarget.from,
                                         to: event.currentTarget.to,
-                                        candidates: [event.candidate]
+                                        data: { candidate: event.candidate }
                                     })
                                 }
                             }
@@ -209,14 +220,26 @@ class Bun extends EventEmitter {
                                 this.emit('new-remote-track', event)
                             }
 
-                            newPeer.onnegotiationneeded = (event) => {
-                                rp(event)
-                                newPeer.createOffer().then(offer => { return newPeer.setLocalDescription(offer) }).then(() => this.socket.emit('offer-sdp', {
-                                    to: newPeer.to, from: newPeer.from,
-                                    room: this.room, sdp: peer.localDescription
-                                })).catch(err => {
-                                    console.error(err)
-                                })
+                            newPeer.makingOffer = false
+
+                            newPeer.onnegotiationneeded = async (event) => {
+                                try {
+                                    p(event)
+                                    newPeer.makingOffer = true
+                                    const offer = await event.currentTarget.createOffer()
+                                    if (event.currentTarget.signalingState != "stable") return;
+                                    await event.currentTarget.setLocalDescription(offer);
+                                    p(event.currentTarget.localDescription, offer)
+                                    this.socket.emit('data', {
+                                        to: event.currentTarget.to,
+                                        from: event.currentTarget.from,
+                                        data: { sdp: event.currentTarget.localDescription }
+                                    })
+                                } catch (error) {
+                                    console.error(error)
+                                } finally {
+                                    newPeer.makingOffer = false
+                                }
                             }
 
                             newPeer.onconnectionstatechange = (event) => {
@@ -236,47 +259,18 @@ class Bun extends EventEmitter {
 
                             newPeer.from = this.socket.id
                             newPeer.to = pid
+                            newPeer.name = this.name
+                            newPeer.initiator = true
+                            newPeer.ignoreOffer = false
                             s(newPeer)
                         }
                     });
                     rp('Establishing Peer Connection to Remote Peer.')
-                    this.connect()
+                    // this.connect()
                     resolve()
                 }
             })
         })
-    }
-
-
-    connect = async () => {
-        for (const [socketId, peer] of this.peers) {
-            rp('Connecting to Remote Peer.')
-            rp(socketId, peer)
-            try {
-                await new Promise((resolve, reject) => {
-                    rp('Creating Offer for Remote Peers')
-                    peer.createOffer({
-                        offerToReceiveAudio: true,
-                        offerToReceiveVideo: true,
-                    }).then((sdp) => {
-                        rp('Set Offer as Local Description.')
-                        peer.setLocalDescription(sdp)
-
-                        setTimeout(() => {
-                            s('Sending Offer to Remote Peer.')
-                            this.socket.emit('offer-sdp', {
-                                to: socketId, from: this.socket.id,
-                                room: this.room, sdp
-                            })
-                            s('Offer Sent to Remote Peer.')
-                            resolve()
-                        }, this.buffer);
-                    }).catch(reject)
-                });
-            } catch (error) {
-                console.error(error)
-            }
-        }
     }
 
     // Get User Media
@@ -286,26 +280,55 @@ class Bun extends EventEmitter {
         audio
     }).then((stream) => {
         p(stream)
-        const video = document.querySelector('#self');
-        video.srcObject = stream;
-        video.onloadedmetadata = (e) => {
-            video.play();
-        };
+        this.addStream(stream)
         this.streams = stream;
-    })
+    }).catch(console.error)
 
     // Get User Screen
     // Add Stream
     shareScreen = async () => await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(stream => {
         for (const [id, peer] of this.peers) {
-            console.log(peer)
             peer.getSenders().forEach(rtpSender => {
-                if (rtpSender.track.kind === 'video') {
-                    rtpSender.replaceTrack(stream.getVideoTracks()[0]).then(() => console.log("Replaced video track from camera to screen")).catch(error => console.log("Could not replace video track: " + error))
+                stream.getVideoTracks()[0].onended = (e) => {
+                    p('Stopped Screen Share', e, peer, this)
+                    this.switchToCam()
+                }
+                p(rtpSender, peer)
+                if (rtpSender?.track?.kind === 'video') {
+                    rtpSender.replaceTrack(stream.getVideoTracks()[0])
+                        .then(() => p("Replaced video track from camera to screen"))
+                        .catch(error => p("Could not replace video track: " + error))
                 }
             })
         }
+        this.addStream(stream)
     })
+
+    switchToCam = async () => {
+        this.addStream(this.streams)
+        for (const [id, peer] of this.peers) {
+            peer.getSenders().forEach(rtpSender => {
+                p(rtpSender, peer)
+                if (rtpSender?.track?.kind === 'video') {
+                    rtpSender.replaceTrack(this.streams.getVideoTracks()[0])
+                        .then(() => p("Replaced video track from camera to screen"))
+                        .catch(error => p("Could not replace video track: " + error))
+                }
+            })
+        }
+    }
+
+    addStream = (stream) => {
+        const video = document.querySelector('#self');
+        video.srcObject = stream;
+        video.onloadedmetadata = (e) => {
+            video.play();
+        };
+    }
+
+    stop = ({ mediaType, peerId }) => {
+        // stop producing media, if id provided stop users media
+    }
 }
 
 export default Bun
