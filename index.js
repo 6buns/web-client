@@ -70,19 +70,7 @@ class Bun extends EventEmitter {
 
                 peer.ontrack = (event) => {
                     rp(`TRACK RECIEVED : ${event}`)
-                    const track = event.streams[0]
-
-                    track.onmute = (e) => {
-                        this.emit('remote-peer-track-muted', e)
-                    }
-                    track.onunmute = (e) => {
-                        this.emit('remote-peer-track-unmuted', e)
-                    }
-                    track.onended = (e) => {
-                        this.emit('remote-peer-track-ended', e)
-                    }
-
-                    this.remoteStreams.set(event.target.from, track)
+                    this.remoteStreams.set(event.target.to, event.streams[0])
                     this.emit('new-remote-track', event)
                 }
 
@@ -174,6 +162,23 @@ class Bun extends EventEmitter {
             }
         })
 
+        this.socket.on('track-update', ({ id, update }) => {
+            s('Track Update', id, update)
+            switch (update) {
+                case 'mute':
+                    this.emit('remote-peer-track-muted', id)
+                    break;
+                case 'unmute':
+                    this.emit('remote-peer-track-unmuted', id)
+                    break;
+                case 'end':
+                    this.emit('remote-peer-track-ended', id)
+                    break;
+                default:
+                    break;
+            }
+        })
+
         // Peer disconnected
         this.socket.on('peer-disconnected', (id) => {
             s('Socket disconnected')
@@ -229,19 +234,7 @@ class Bun extends EventEmitter {
 
                             newPeer.ontrack = (event) => {
                                 rp(`TRACK RECIEVED : ${event}`)
-                                const track = event.streams[0]
-
-                                track.onmute = (e) => {
-                                    this.emit('remote-peer-track-muted', e)
-                                }
-                                track.onunmute = (e) => {
-                                    this.emit('remote-peer-track-unmuted', e)
-                                }
-                                track.onended = (e) => {
-                                    this.emit('remote-peer-track-ended', e)
-                                }
-
-                                this.remoteStreams.set(event.target.from, track)
+                                this.remoteStreams.set(event.target.to, event.streams[0])
                                 this.emit('new-remote-track', event)
                             }
 
@@ -319,6 +312,7 @@ class Bun extends EventEmitter {
             peer.getSenders().forEach(rtpSender => {
                 if (rtpSender?.track?.kind === track.kind) {
                     peer.removeTrack(rtpSender)
+                    this.socket.emit('track-update', { id: peer.from, update: 'end', room: this.room })
                 }
             })
         }
