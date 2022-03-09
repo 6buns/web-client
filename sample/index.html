@@ -125,7 +125,8 @@
       bun.on('remote-peer-track-ended', (id) => {
         bun.remoteStreams.get(id).getVideoTracks()[0].stop();
         document.getElementById(`remote-video-${id}`).srcObject = null
-      })
+      });
+      
       bun.on('remote-peer-track-unmuted', console.log)
       bun.on('remote-peer-track-muted', console.log)
 
