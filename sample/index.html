@@ -14,40 +14,83 @@
       <h1 class="text-8xl font-bold uppercase text-green-50">121</h1>
     </div>
     <main
-      class="flex-grow flex flex-col flex-wrap items-center justify-center space-y-4"
+      class="flex-grow flex flex-wrap items-center justify-center content-center"
     >
-      <video
-        class="w-80 h-48 bg-white rounded-2xl shadow-lg"
-        id="self"
-        autoplay
-        controls
-        muted
-      ></video>
-
-      <button onclick="bun.shareScreen()">Screen Share</button>
+      <div
+        class="relative w-80 h-48 bg-white overflow-hidden rounded-2xl shadow-lg m-4 group cursor-pointer"
+      >
+        <video
+          class="absolute h-full w-full object-cover"
+          id="self"
+          autoplay
+          controls
+          muted
+        ></video>
+      </div>
     </main>
+    <div id="buttonRack" class="absolute bottom-8 space-x-4">
+      <button
+        class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+        id="screen"
+        aria-state="0"
+        onclick="handleClick(this)"
+      >
+        Share Screen
+      </button>
+      <button
+        class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+        id="audio"
+        aria-state="1"
+        onclick="handleClick(this)"
+      >
+        Stop Audio
+      </button>
+      <button
+        class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+        id="video"
+        aria-state="1"
+        onclick="handleClick(this)"
+      >
+        Stop Video
+      </button>
+    </div>
+
+    <template id="video">
+      <div
+        class="relative w-80 h-48 bg-white overflow-hidden rounded-2xl shadow-lg m-4 group cursor-pointer"
+      >
+        <video
+          class="absolute h-full w-full object-cover"
+          id="self"
+          autoplay
+          controls
+          muted
+        ></video>
+      </div>
+    </template>
+
     <script src="../dist/bundle.js"></script>
     <script>
       const findOrCreateVid = (n) => {
-        let vid = document.querySelector(`#remote-video-${n}`);
+        let vid = document.querySelector(`#remote-video-${n.to}`);
         if (!vid) {
           vid = document.createElement("video");
           vid.setAttribute(
             "class",
-            "remote w-80 h-48 bg-white rounded-2xl shadow-lg"
+            "remote w-80 h-48 bg-white rounded-2xl shadow-lg m-4"
           );
-          vid.setAttribute("id", `remote-video-${n}`);
+          vid.setAttribute("id", `remote-video-${n.to}`);
           vid.controls = true;
           vid.autoplay = true;
           vid.muted = true;
-          vid.poster="https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217";
+          vid.poster = n.poster;
           document.querySelector("main").append(vid);
         }
         return vid;
       };
 
       const addTrackToVideo = (event) => {
-        let vid = findOrCreateVid(event.target.to);
+        let vid = findOrCreateVid(event.target);
         try {
           vid.srcObject = event.streams[0];
         } catch (error) {
@@ -55,9 +98,10 @@
         }
       };
 
-      const bun = new Bun('b2eb6c26-8695-45f2-8626-c08bebc83c56');
-      console.log(bun)
-      bun.getMedia(true, true);
+      const bun = new Bun("b2eb6c26-8695-45f2-8626-c08bebc83c56", true, true);
+
+      document.getElementById("self").poster = bun.poster;
+
       bun.join("abcdef");
 
       bun.on("new-peer", (event) => {
@@ -72,6 +116,65 @@
       bun.on("peer-left", (to) => {
         document.querySelector(`#remote-video-${to}`).remove();
       });
+
+      bun.on("screen-share-ended", (e) => {
+        console.log(e);
+        document.getElementById("screen").disabled = false;
+      });
+
+      bun.on('remote-peer-track-ended', console.log)
+      bun.on('remote-peer-track-unmuted', console.log)
+      bun.on('remote-peer-track-muted', console.log)
+
+      const handleClick = (e) => {
+        switch (e.id) {
+          case "screen":
+            console.log("switching to screen");
+            bun.screenShare();
+            document.getElementById("screen").disabled = true;
+            break;
+          case "video": {
+            const state =
+              document.getElementById("video").getAttribute("aria-state") ===
+              "1"
+                ? true
+                : false;
+            if (state) {
+              console.log("stop video");
+              bun.stopMedia("video");
+              document.getElementById("video").innerHTML = "Start Video";
+              document.getElementById("video").setAttribute("aria-state", "0");
+              break;
+            } else {
+              console.log("start video");
+              bun.getMedia(true, false);
+              document.getElementById("video").innerHTML = "Stop Video";
+              document.getElementById("video").setAttribute("aria-state", "1");
+              break;
+            }
+          }
+          case "audio": {
+            const state =
+              document.getElementById("audio").getAttribute("aria-state") ===
+              "1"
+                ? true
+                : false;
+            if (state) {
+              console.log("stop Audio");
+              bun.stopMedia("audio");
+              document.getElementById("audio").innerHTML = "Start Audio";
+              document.getElementById("audio").setAttribute("aria-state", "0");
+              break;
+            } else {
+              console.log("start Audio");
+              bun.getMedia(true, true);
+              document.getElementById("audio").innerHTML = "Stop Audio";
+              document.getElementById("audio").setAttribute("aria-state", "1");
+              break;
+            }
+          }
+        }
+      };
     </script>
   </body>
 </html>

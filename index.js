@@ -9,35 +9,37 @@ const p = debug('Peer')
 const rp = debug('Remote')
 
 class Bun extends EventEmitter {
-    constructor(apiKey = null) {
+    constructor(apiKey = null, hasVideo = true, hasAudio = true) {
         super();
         this.apiKey = apiKey;
-        this.serverURL = 'https://p2p.6buns.com/'
-        this.name = Math.random() > 0.5 ? 'a' : 'b'
-        this.streams = [];
-        this.room = ''
-        this.buffer = 50
+        this.media = {
+            video: hasVideo,
+            audio: hasAudio
+        };
+        this.getMedia(hasVideo, hasAudio);
+        this.name = btoa(Math.random().toString()).substring(10, 5)
+        this.poster = this.createPoster(this.name)
+        this.streams = new MediaStream();
+        this.room = '';
+        this.buffer = 50;
         this.remoteStreams = new Map()
         this.peers = new Map();
         this.iceCandidates = new Map();
-        this.iceServers = []
+        this.iceServers = [];
 
         // Connect to socket
-        this.socket = io(this.serverURL, {
+        this.socket = io('https://p2p.6buns.com/', {
             transports: ["websocket", "polling"],
             auth: {
                 key: this.apiKey
             }
-        })
+        });
 
         // Socket Incoming Handlers
         this.socket.on('connection', (id, users, iceServers) => {
             s('Socket Connected', { id, users, iceServers })
             this.iceServers = [...iceServers]
-            // this.iceServers = [{
-            //     urls: 'stun:stun.6buns.com:3478'
-            // }]
-        })
+        });
 
         // New Peer
         this.socket.on('new-peer-connected', (id) => {
@@ -47,7 +49,6 @@ class Bun extends EventEmitter {
                 this.peers.set(id, new RTCPeerConnection({
                     iceServers: this.iceServers
                 }))
-                // this.peers.set(id, new RTCPeerConnection(config))
                 const peer = this.peers.get(id)
 
                 peer.onicecandidate = (event) => {
@@ -69,7 +70,19 @@ class Bun extends EventEmitter {
 
                 peer.ontrack = (event) => {
                     rp(`TRACK RECIEVED : ${event}`)
-                    this.remoteStreams.set(event.target.from, event.track)
+                    const track = event.streams[0]
+
+                    track.onmute = (e) => {
+                        this.emit('remote-peer-track-muted', e)
+                    }
+                    track.onunmute = (e) => {
+                        this.emit('remote-peer-track-unmuted', e)
+                    }
+                    track.onended = (e) => {
+                        this.emit('remote-peer-track-ended', e)
+                    }
+
+                    this.remoteStreams.set(event.target.from, track)
                     this.emit('new-remote-track', event)
                 }
 
@@ -115,6 +128,7 @@ class Bun extends EventEmitter {
                 peer.name = this.name
                 peer.initiator = false
                 peer.ignoreOffer = false
+                peer.poster = this.poster
                 s(peer)
             }
         })
@@ -194,7 +208,6 @@ class Bun extends EventEmitter {
                             this.peers.set(pid, new RTCPeerConnection({
                                 iceServers: this.iceServers
                             }))
-                            // this.peers.set(pid, new RTCPeerConnection(config))
                             const newPeer = this.peers.get(pid)
 
                             newPeer.onicecandidate = (event) => {
@@ -216,7 +229,19 @@ class Bun extends EventEmitter {
 
                             newPeer.ontrack = (event) => {
                                 rp(`TRACK RECIEVED : ${event}`)
-                                this.remoteStreams.set(event.target.from, event.streams[0])
+                                const track = event.streams[0]
+
+                                track.onmute = (e) => {
+                                    this.emit('remote-peer-track-muted', e)
+                                }
+                                track.onunmute = (e) => {
+                                    this.emit('remote-peer-track-unmuted', e)
+                                }
+                                track.onended = (e) => {
+                                    this.emit('remote-peer-track-ended', e)
+                                }
+
+                                this.remoteStreams.set(event.target.from, track)
                                 this.emit('new-remote-track', event)
                             }
 
@@ -262,15 +287,48 @@ class Bun extends EventEmitter {
                             newPeer.name = this.name
                             newPeer.initiator = true
                             newPeer.ignoreOffer = false
+                            newPeer.poster = this.poster
                             s(newPeer)
                         }
                     });
                     rp('Establishing Peer Connection to Remote Peer.')
-                    // this.connect()
                     resolve()
                 }
             })
         })
+    }
+
+    addMediaTrack = (track) => {
+        this.streams.addTrack(track);
+        if (this.peers.size > 0) {
+            for (const [id, peer] of this.peers) {
+                peer.addTrack(track, this.streams)
+            }
+        }
+    }
+
+    addMedia = (stream) => {
+        p('Adding Stream from Peer Connection')
+        stream.getTracks().forEach(track => this.addMediaTrack(track))
+        p('Added new Stream', this.peers)
+    }
+
+
+    removeMediaTrack = (track) => {
+        for (const [id, peer] of this.peers) {
+            peer.getSenders().forEach(rtpSender => {
+                if (rtpSender?.track?.kind === track.kind) {
+                    peer.removeTrack(rtpSender)
+                }
+            })
+        }
+        this.streams.removeTrack(track)
+    }
+
+    removeMedia = (stream) => {
+        p('Removing Stream from Peer Connection', stream)
+        stream.getTracks().forEach(track => this.removeMediaTrack(track))
+        p('Removed Stream', stream)
     }
 
     // Get User Media
@@ -281,41 +339,27 @@ class Bun extends EventEmitter {
     }).then((stream) => {
         p(stream)
         this.addStream(stream)
-        this.streams = stream;
+        this.addMedia(stream)
     }).catch(console.error)
 
     // Get User Screen
     // Add Stream
-    shareScreen = async () => await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(stream => {
-        for (const [id, peer] of this.peers) {
-            peer.getSenders().forEach(rtpSender => {
-                stream.getVideoTracks()[0].onended = (e) => {
-                    p('Stopped Screen Share', e, peer, this)
-                    this.switchToCam()
-                }
-                p(rtpSender, peer)
-                if (rtpSender?.track?.kind === 'video') {
-                    rtpSender.replaceTrack(stream.getVideoTracks()[0])
-                        .then(() => p("Replaced video track from camera to screen"))
-                        .catch(error => p("Could not replace video track: " + error))
-                }
-            })
+    screenShare = async () => await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(stream => {
+        const track = stream.getVideoTracks()[0]
+        console.log(track)
+        track.onended = (e) => {
+            p('Stopped Screen Share', e)
+            this.emit('screen-share-ended', e)
+            this.switchToCam()
         }
+        this.removeMedia(this.streams)
+        this.addMedia(stream)
         this.addStream(stream)
     })
 
     switchToCam = async () => {
-        this.addStream(this.streams)
-        for (const [id, peer] of this.peers) {
-            peer.getSenders().forEach(rtpSender => {
-                p(rtpSender, peer)
-                if (rtpSender?.track?.kind === 'video') {
-                    rtpSender.replaceTrack(this.streams.getVideoTracks()[0])
-                        .then(() => p("Replaced video track from camera to screen"))
-                        .catch(error => p("Could not replace video track: " + error))
-                }
-            })
-        }
+        this.removeMedia(this.streams)
+        this.getMedia(this.media.video, this.media.audio)
     }
 
     addStream = (stream) => {
@@ -326,8 +370,70 @@ class Bun extends EventEmitter {
         };
     }
 
-    stop = ({ mediaType, peerId }) => {
+    stopMedia = (mediaType = undefined, peerId = undefined) => {
         // stop producing media, if id provided stop users media
+        if (mediaType) {
+            switch (mediaType) {
+                case 'video':
+                    this.streams.getVideoTracks().forEach(track => {
+                        this.removeMediaTrack(track);
+                        document.querySelector('#self').srcObject = null;
+                        track.stop()
+                    })
+                    break;
+                case 'audio':
+                    this.streams.getAudioTracks().forEach(track => {
+                        this.removeMediaTrack(track);
+                        track.stop()
+                    })
+                    break;
+                case 'screen':
+                    this.streams.getVideoTracks().forEach(track => {
+                        this.removeMediaTrack(track);
+                        track.stop()
+                    })
+                    break;
+                case 'all':
+                    this.streams.getTracks().forEach(track => {
+                        this.removeMediaTrack(track);
+                        track.stop()
+                        document.querySelector('#self').srcObject = null;
+                    })
+                    break;
+            }
+        }
+
+        if (peerId) {
+            this.peers.get(peerId).getSenders().forEach(rtpSender => {
+                if (mediaType) {
+                    if (rtpSender.track.kind === mediaType) rtpSender.track.stop()
+                } else {
+                    rtpSender.track.stop()
+                }
+            })
+        }
+    }
+
+    createPoster = (name) => {
+        let canv = document.createElement('canvas');
+        canv.id = "canv";
+        canv.height = 600;
+        canv.width = 800;
+        document.body.appendChild(canv)
+        canv = document.getElementById('canv');
+        const ctx = canv.getContext('2d');
+
+        ctx.fillStyle = '#1C1917';
+        ctx.fillRect(0, 0, 800, 600);
+
+        ctx.fillStyle = '#FAFAF9';
+        ctx.textAlign = 'center';
+        ctx.font = '64px sans-serif';
+        ctx.fillText(name, 400, 300);
+
+        const uri = (canv.toDataURL());
+        document.body.removeChild(canv);
+        return uri;
     }
 }
 
