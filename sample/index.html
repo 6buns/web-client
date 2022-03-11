@@ -98,7 +98,11 @@
         }
       };
 
-      const bun = new Bun("b2eb6c26-8695-45f2-8626-c08bebc83c56", true, true);
+      const bun = new Bun({
+        apiKey: "b2eb6c26-8695-45f2-8626-c08bebc83c56",
+        hasVideo: true,
+        hasAudio: true,
+      });
 
       document.getElementById("self").poster = bun.poster;
 
@@ -122,13 +126,13 @@
         document.getElementById("screen").disabled = false;
       });
 
-      bun.on('remote-peer-track-ended', (id) => {
+      bun.on("remote-peer-track-ended", (id) => {
         bun.remoteStreams.get(id).getVideoTracks()[0].stop();
-        document.getElementById(`remote-video-${id}`).srcObject = null
+        document.getElementById(`remote-video-${id}`).srcObject = null;
       });
-      
-      bun.on('remote-peer-track-unmuted', console.log)
-      bun.on('remote-peer-track-muted', console.log)
+
+      bun.on("remote-peer-track-unmuted", console.log);
+      bun.on("remote-peer-track-muted", console.log);
 
       const handleClick = (e) => {
         switch (e.id) {

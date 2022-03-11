@@ -8,8 +8,17 @@ const s = debug('Socket')
 const p = debug('Peer')
 const rp = debug('Remote')
 
+/**
+ * @class Bun Class which handles all the peer to peer realtime connection.
+ */
 class Bun extends EventEmitter {
-    constructor(apiKey = null, hasVideo = true, hasAudio = true) {
+    /**
+     * Initializes the Peer with auth variables, and media types.
+     * @param {string} apiKey API key provided, is available on dashboard.
+     * @param {boolean} hasVideo If true, peer to peer session has camera on.
+     * @param {boolean} hasAudio If true, session has microphone on.
+     */
+    constructor({ apiKey = null, hasVideo = true, hasAudio = true }) {
         super();
         this.apiKey = apiKey;
         this.media = {
@@ -27,7 +36,9 @@ class Bun extends EventEmitter {
         this.iceCandidates = new Map();
         this.iceServers = [];
 
-        // Connect to socket
+        /**
+         * @implements Establishing the socket connection.
+         */
         this.socket = io('https://p2p.6buns.com/', {
             transports: ["websocket", "polling"],
             auth: {
@@ -35,13 +46,17 @@ class Bun extends EventEmitter {
             }
         });
 
-        // Socket Incoming Handlers
+        /**
+         * @listens Socket Socket Connection established.
+         */
         this.socket.on('connection', (id, users, iceServers) => {
             s('Socket Connected', { id, users, iceServers })
             this.iceServers = [...iceServers]
         });
 
-        // New Peer
+        /**
+         * @listens Socket New Peer connected. Create a new RTCPeerConnection for this new peer.
+         */
         this.socket.on('new-peer-connected', (id) => {
             if (id !== this.socket.id) {
 
@@ -121,6 +136,9 @@ class Bun extends EventEmitter {
             }
         })
 
+        /**
+         * @listens Socket listener for listening on sdp, or candidate data required for RTCPeerConnection.
+         */
         this.socket.on('data', async ({ to, from, data: { sdp, candidate } }) => {
             if (this.peers.has(from) && to === this.socket.id) {
                 try {
@@ -162,6 +180,9 @@ class Bun extends EventEmitter {
             }
         })
 
+        /**
+         * @listens Socket Track Update Changes.
+         */
         this.socket.on('track-update', ({ id, update }) => {
             s('Track Update', id, update)
             switch (update) {
@@ -179,7 +200,9 @@ class Bun extends EventEmitter {
             }
         })
 
-        // Peer disconnected
+        /**
+         * @listens Socket Peer disconnected
+         */
         this.socket.on('peer-disconnected', (id) => {
             s('Socket disconnected')
             let peer = this.peers.get(id)
@@ -199,7 +222,10 @@ class Bun extends EventEmitter {
         p(x, 'Client Library Loaded !')
     }
 
-    // Create or Join Room
+    /**
+     * Creates a new RTCPeerConnection for each peer, if any.
+     * @param {string} room Room ID peer wants to connect to. If no room exsits then a new room is created with the provided id.
+     */
     join = async (room) => {
         this.room = room
         await new Promise(async (resolve, reject) => {
@@ -291,6 +317,10 @@ class Bun extends EventEmitter {
         })
     }
 
+    /**
+     * Add local Media track to all the peer connections.
+     * @param {object} track MediaStreamTrack to be added to the session.
+     */
     addMediaTrack = (track) => {
         this.streams.addTrack(track);
         if (this.peers.size > 0) {
@@ -300,13 +330,20 @@ class Bun extends EventEmitter {
         }
     }
 
+    /**
+     * Can be used to add a media stream, for all peer connections.
+     * @param {object} stream MediaStream to be added, tracks are extracted and @function addMediaTrack is called on each track.
+     */
     addMedia = (stream) => {
         p('Adding Stream from Peer Connection')
         stream.getTracks().forEach(track => this.addMediaTrack(track))
         p('Added new Stream', this.peers)
     }
 
-
+    /**
+     * Can be used to remove a media stream track, for all peer connections.
+     * @param {object} track track MediaStreamTrack to be removed from all the connected peer's streams.
+     */
     removeMediaTrack = (track) => {
         for (const [id, peer] of this.peers) {
             peer.getSenders().forEach(rtpSender => {
@@ -319,14 +356,21 @@ class Bun extends EventEmitter {
         this.streams.removeTrack(track)
     }
 
+    /**
+     * Can be used to remove a media stream, for all peer connections.
+     * @param {object} stream MediaStream to be removed, tracks are extracted and @function removeMediaTrack is called on each track.
+     */
     removeMedia = (stream) => {
         p('Removing Stream from Peer Connection', stream)
         stream.getTracks().forEach(track => this.removeMediaTrack(track))
         p('Removed Stream', stream)
     }
 
-    // Get User Media
-    // Add Stream
+    /**
+     * Get User Media for session.
+     * @param {boolean} video
+     * @param {boolean} audio
+     */
     getMedia = (video, audio) => navigator.mediaDevices.getUserMedia({
         video,
         audio
@@ -336,8 +380,11 @@ class Bun extends EventEmitter {
         this.addMedia(stream)
     }).catch(console.error)
 
-    // Get User Screen
-    // Add Stream
+    /**
+     * Get User Screen for session.
+     * @param {boolean} video
+     * @param {boolean} audio
+     */
     screenShare = async () => await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(stream => {
         const track = stream.getVideoTracks()[0]
         console.log(track)
@@ -351,11 +398,18 @@ class Bun extends EventEmitter {
         this.addStream(stream)
     })
 
+    /**
+     * Only used when screen sharing.
+     */
     switchToCam = async () => {
         this.removeMedia(this.streams)
         this.getMedia(this.media.video, this.media.audio)
     }
 
+    /**
+     * Adds local stream to video element.
+     * @param {*} stream
+     */
     addStream = (stream) => {
         const video = document.querySelector('#self');
         video.srcObject = stream;
@@ -364,6 +418,11 @@ class Bun extends EventEmitter {
         };
     }
 
+    /**
+     * Used to stop media for user, and other peers.
+     * @param {string} mediaType Type of media to stop.
+     * @param {string} peerId Peer ID for which media to be stopped. If empty, user's media can be stopped.
+     */
     stopMedia = (mediaType = undefined, peerId = undefined) => {
         // stop producing media, if id provided stop users media
         if (mediaType) {
@@ -408,6 +467,12 @@ class Bun extends EventEmitter {
         }
     }
 
+    /**
+     * @method createPoster
+     * @summary Used to generate an image to be used as poster.
+     * @param {string} name User's name.
+     * @returns Data URL as base64 of generated Image to used as poster.
+     */
     createPoster = (name) => {
         let canv = document.createElement('canvas');
         canv.id = "canv";
