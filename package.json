@@ -1,5 +1,5 @@
 {
-  "name": "6buns-client",
+  "name": "@6buns/client",
   "version": "1.0.2",
   "description": "Client Library for 6buns",
   "main": "dist/main.js",
