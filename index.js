@@ -408,7 +408,7 @@ class Bun extends EventEmitter {
 
     /**
      * Adds local stream to video element.
-     * @param {*} stream
+     * @param {object} stream
      */
     addStream = (stream) => {
         const video = document.querySelector('#self');
