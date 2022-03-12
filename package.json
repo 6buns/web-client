@@ -8,6 +8,10 @@
   },
   "author": "adtjha",
   "license": "ISC",
+  "dependencies": {
+    "events": "^3.3.0",
+    "socket.io-client": "^4.4.1"
+  },
   "devDependencies": {
     "@babel/core": "^7.17.5",
     "@babel/preset-env": "^7.16.11",
@@ -17,13 +21,11 @@
     "babel": "^6.23.0",
     "core-js": "^3.21.1",
     "debug": "^4.3.3",
-    "events": "^3.3.0",
     "jsdoc": "^3.6.10",
     "regenerator-runtime": "^0.13.9",
     "rollup": "^2.68.0",
     "rollup-plugin-node-builtins": "^2.1.2",
     "rollup-plugin-node-globals": "^1.4.0",
-    "rollup-plugin-terser": "^7.0.2",
-    "socket.io-client": "^4.4.1"
+    "rollup-plugin-terser": "^7.0.2"
   }
 }
