@@ -1,6 +1,5 @@
-import { io, Socket, SocketOptions } from "socket.io-client";
+import { io, Socket } from "socket.io-client";
 import debug from "debug";
-import { config } from "./src/config";
 import { EventEmitter } from "events";
 
 const s: debug.Debugger = debug("Socket");
@@ -505,8 +504,9 @@ interface CustomPeerConnection extends RTCPeerConnection {
   socket: Socket;
 }
 
-type CustomPeerConnectionTrackEvent<T extends RTCTrackEvent> = RTCTrackEvent;
+type CustomPeerConnectionTrackEvent<T> = RTCTrackEvent;
 type CustomPeerConnectionIceEvent = RTCPeerConnectionIceEvent;
+
 interface Data {
   to: string;
   from: string;

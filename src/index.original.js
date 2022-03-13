@@ -1,7 +1,6 @@
 
 import { io } from "socket.io-client";
 import debug from "debug";
-import { config } from "./src/config";
 import EventEmitter from "events";
 
 const s = debug('Socket')
