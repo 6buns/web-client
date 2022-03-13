@@ -20,8 +20,7 @@
         class="relative w-80 h-48 bg-white overflow-hidden rounded-2xl shadow-lg m-4 group cursor-pointer"
       >
         <video
-          class="absolute h-full w-full object-cover"
-          id="self"
+          class="self absolute h-full w-full object-cover"
           autoplay
           controls
           muted
@@ -55,21 +54,23 @@
       </button>
     </div>
 
-    <template id="video">
+    <!-- <template id="video">
       <div
         class="relative w-80 h-48 bg-white overflow-hidden rounded-2xl shadow-lg m-4 group cursor-pointer"
       >
         <video
           class="absolute h-full w-full object-cover"
-          id="self"
+          class="self"
           autoplay
           controls
           muted
         ></video>
       </div>
-    </template>
+    </template> -->
 
     <script src="../dist/bundle.js"></script>
+
+    <!-- <script src="./index.js"></script> -->
     <script>
       const findOrCreateVid = (n) => {
         let vid = document.querySelector(`#remote-video-${n.to}`);
@@ -98,13 +99,9 @@
         }
       };
 
-      const bun = new Bun({
-        apiKey: "b2eb6c26-8695-45f2-8626-c08bebc83c56",
-        hasVideo: true,
-        hasAudio: true,
-      });
+      const bun = new Bun({ apiKey: "b2eb6c26-8695-45f2-8626-c08bebc83c56" });
 
-      document.getElementById("self").poster = bun.poster;
+      document.querySelector(".self").poster = bun.poster;
 
       bun.join("abcdef");
 
