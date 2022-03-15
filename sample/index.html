@@ -70,7 +70,6 @@
 
     <script src="../dist/bundle.js"></script>
 
-    <!-- <script src="./index.js"></script> -->
     <script>
       const findOrCreateVid = (n) => {
         let vid = document.querySelector(`#remote-video-${n.to}`);
@@ -99,11 +98,12 @@
         }
       };
 
-      const bun = new Bun({ apiKey: "b2eb6c26-8695-45f2-8626-c08bebc83c56" });
+      const bun = new Bun({
+        apiKey: "b2eb6c26-8695-45f2-8626-c08bebc83c56",
+        room: "abcdef",
+      });
 
       document.querySelector(".self").poster = bun.poster;
-
-      bun.join("abcdef");
 
       bun.on("new-peer", (event) => {
         console.log("New Peer", bun.peers);

@@ -15,16 +15,26 @@ export default {
         format: 'iife'
     },
     plugins: [
-        typescript({ compilerOptions: { downlevelIteration: true } }),
-        builtins(),
         resolve({
             browser: true,
+            preferBuiltins: false
         }),
+        typescript({
+            compilerOptions: {
+                downlevelIteration: true,
+                declaration: true,
+                outDir: 'dist',
+                emitDeclarationOnly: true,
+                isolatedModules: true,
+
+            }
+        }),
+        builtins(),
         commonjs(),
         babel({
             include: ["**.js", "node_modules/**", "node_modules/events"],
             babelHelpers: "bundled",
-            presets: [["@babel/preset-env", { "useBuiltIns": "usage" }]],
+            presets: [["@babel/preset-typescript"], ["@babel/preset-env", { "useBuiltIns": "usage" }]],
         }),
         terser(),
     ]
