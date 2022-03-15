@@ -20,6 +20,7 @@ class Bun extends EventEmitter {
   iceServers: Array<RTCIceServer>;
   streams: MediaStream;
   remoteStreams: Map<string, readonly MediaStream[]>;
+  id: string
 
   constructor({
     apiKey,
@@ -49,6 +50,16 @@ class Bun extends EventEmitter {
     this.remoteStreams = new Map();
     this.peers = new Map();
     this.iceServers = [];
+    this.id = btoa(Math.random().toString())
+      .substring(16, 4)
+      .split("")
+      .map(
+        (x) =>
+          "-_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"[
+            ~~(64 * Math.random())
+          ]
+      )
+      .join("");
 
     this.socket = io("https://p2p.6buns.com", {
       transports: ["websocket", "polling"],
@@ -132,6 +143,63 @@ class Bun extends EventEmitter {
             console.error(new Error(error));
           } finally {
             pe.makingOffer = false;
+          }
+        };
+
+        peer.onconnectionstatechange = (ev: Event) => {
+          switch (peer.connectionState) {
+            case "new":
+            case "connecting":
+              rp("Connecting...");
+              break;
+            case "connected":
+              rp("Connected.");
+              peer.checkConnection();
+              break;
+            case "disconnected":
+              rp("Disconnecting...");
+              peer.checkConnection();
+              break;
+            case "closed":
+              rp("Offline");
+              break;
+            case "failed":
+              rp("Error");
+              peer.checkConnection();
+              break;
+          }
+        };
+
+        peer.checkConnection = () => {
+          const {
+            connectionState,
+            iceConnectionState,
+            iceGatheringState,
+            signalingState,
+          } = peer;
+          if (
+            connectionState === "connected" &&
+            iceConnectionState === "connected" &&
+            iceGatheringState === "complete" &&
+            signalingState === "stable"
+          ) {
+            rp("Connection Established.");
+          } else if (
+            (connectionState === "disconnected" ||
+              connectionState === "closed" ||
+              connectionState === "failed") &&
+            (iceConnectionState === "disconnected" ||
+              iceConnectionState === "failed" ||
+              iceConnectionState === "closed")
+          ) {
+            rp("Error in Connection Establishment");
+            this.emit("peer-left", peer.to);
+
+            peer.close();
+            rp("Remote Peer Connection Closed");
+
+            this.peers.delete(peer.to);
+            rp("Remote Peer Removed");
           }
         };
 
@@ -248,9 +316,9 @@ class Bun extends EventEmitter {
         "join-room",
         this.room,
         ({ res, err }: { res: Array<keyof Socket>; err: string }) => {
-           if (err) {
-             s("Socket Error", err);
-           } else if (res) {
+          if (err) {
+            s("Socket Error", err);
+          } else if (res) {
             s("Room Joined", res);
             if (res.length > 1) {
               s("Peers List Recieved");
@@ -324,6 +392,63 @@ class Bun extends EventEmitter {
                       console.error(new Error(error));
                     } finally {
                       pe.makingOffer = false;
+                    }
+                  };
+
+                  newPeer.onconnectionstatechange = (ev: Event) => {
+                    switch (newPeer.connectionState) {
+                      case "new":
+                      case "connecting":
+                        p("Connecting...");
+                        break;
+                      case "connected":
+                        p("Connected.");
+                        newPeer.checkConnection();
+                        break;
+                      case "disconnected":
+                        p("Disconnecting...");
+                        newPeer.checkConnection();
+                        break;
+                      case "closed":
+                        p("Offline");
+                        break;
+                      case "failed":
+                        p("Error");
+                        newPeer.checkConnection();
+                        break;
+                    }
+                  };
+
+                  newPeer.checkConnection = () => {
+                    const {
+                      connectionState,
+                      iceConnectionState,
+                      iceGatheringState,
+                      signalingState,
+                    } = newPeer;
+                    if (
+                      connectionState === "connected" &&
+                      iceConnectionState === "connected" &&
+                      iceGatheringState === "complete" &&
+                      signalingState === "stable"
+                    ) {
+                      p("Connection Established.");
+                    } else if (
+                      (connectionState === "disconnected" ||
+                        connectionState === "closed" ||
+                        connectionState === "failed") &&
+                      (iceConnectionState === "disconnected" ||
+                        iceConnectionState === "failed" ||
+                        iceConnectionState === "closed")
+                    ) {
+                      p("Error in Connection Establishment");
+                      this.emit("peer-left", newPeer.to);
+
+                      newPeer.close();
+                      rp("Remote Peer Connection Closed");
+
+                      this.peers.delete(newPeer.to);
+                      rp("Remote Peer Removed");
                     }
                   };
 
@@ -512,6 +637,7 @@ interface CustomPeerConnection extends RTCPeerConnection {
   ignoreOffer: boolean;
   makingOffer: boolean;
   socket: Socket;
+  checkConnection: () => void;
 }
 
 type CustomPeerConnectionTrackEvent<T> = RTCTrackEvent;
