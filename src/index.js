@@ -379,7 +379,7 @@ var Bun = /** @class */ (function (_super) {
         _this.remoteStreams = new Map();
         _this.peers = new Map();
         _this.iceServers = [];
-        _this.socket = socket_io_client_1.io("https://p2p.6buns.com/", {
+        _this.socket = socket_io_client_1.io("https://p2p.6buns.com", {
             transports: ["websocket", "polling"],
             auth: {
                 key: _this.apiKey
