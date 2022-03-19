@@ -80,7 +80,11 @@ class Bun extends EventEmitter {
         s("Socket Connected", { id, users, iceServers });
         this.iceServers = [...iceServers];
 
-        this.join();
+        if (this.peers.size > 0) {
+          this.socket.emit("update-socket-id", this.socket.id);
+        } else {
+          this.join();
+        }
       }
     );
 
@@ -216,11 +220,7 @@ class Bun extends EventEmitter {
             rp("Error in Connection Establishment");
             this.emit("peer-left", peer.to.name);
 
-            peer.close();
-            rp("Remote Peer Connection Closed");
-
-            this.peers.delete(peer.to.name);
-            rp("Remote Peer Removed");
+            this.removePeer(peer.to.name);
           }
         };
 
@@ -329,21 +329,13 @@ class Bun extends EventEmitter {
     );
 
     this.socket.on("peer-disconneted", (id: string) => {
-      let peer = this.peers.get(id);
-      s("Socket Disconnected", peer);
-
-      this.emit("peer-left", peer.to);
-
-      peer.close();
-      rp("Remote Peer Connection Closed");
-
-      this.peers.delete(id);
-      rp("Remote Peer Removed");
+      s("Socket Disconnected", id);
+      this.removePeer(id);
     });
   }
 
   /**
-   * Join the room.
+   * Join the room with the provided room_id.
    */
   join = async () => {
     await new Promise<void>((resolve, reject) => {
@@ -377,55 +369,6 @@ class Bun extends EventEmitter {
         }
       );
     });
-  };
-
-  /**
-   * Add media track, to remote stream.
-   * @param track
-   * @param id
-   */
-  addMediaTrack = (track: MediaStreamTrack, id?: string) => {
-    this.streams.addTrack(track);
-    if (id) {
-      this.peers.get(id).addTrack(track);
-    } else {
-      if (this.peers.size > 0) {
-        for (const [id, peer] of this.peers) {
-          peer.addTrack(track);
-        }
-      }
-    }
-  };
-
-  addMedia = (stream: MediaStream, id?: string) => {
-    stream
-      .getTracks()
-      .forEach((track) =>
-        id ? this.addMediaTrack(track, id) : this.addMediaTrack(track)
-      );
-    p("Added new Stream", this.peers);
-  };
-
-  removeMediaTrack = (track: MediaStreamTrack) => {
-    for (const [id, peer] of this.peers) {
-      peer.getSenders().forEach((rtpSender: RTCRtpSender) => {
-        if (rtpSender?.track?.kind === track.kind) {
-          peer.removeTrack(rtpSender);
-          s("Track Update Request Sent.");
-          this.socket.emit("track-update", {
-            id: peer.from.name,
-            update: "end",
-            room: this.room,
-          });
-        }
-      });
-    }
-    this.streams.removeTrack(track);
-  };
-
-  removeMedia = (stream: MediaStream) => {
-    stream.getTracks().forEach((track) => this.removeMediaTrack(track));
-    p("Removed Stream", stream);
   };
 
   startMedia = async (start?: boolean) => {
@@ -467,8 +410,6 @@ class Bun extends EventEmitter {
         track.onended = async (ev) => {
           p("Stop Sharing Screen");
           this.emit("screen-share-ended", ev);
-          // this.removeMedia(this.streams);
-          // const stream = (await this.getMedia()) as MediaStream;
           this.replaceMedia(this.streams);
           this.addStream(this.streams);
         };
@@ -558,10 +499,7 @@ class Bun extends EventEmitter {
   };
 
   /**
-   * Replace Media Track, handles three states,
-   *  - if track is null in RTPSender
-   *  - if RTPSender track is not enabled,
-   *  - if
+   * Replace Media Track
    *
    * @param track
    * @param id
@@ -620,14 +558,63 @@ class Bun extends EventEmitter {
     const peer = this.peers.get(id);
 
     peer.close();
+    rp("Remote Peer Connection Closed");
 
     this.peers.delete(id);
+    rp("Remote Peer Removed");
+
+    this.remoteStreams.delete(id)
+    rp("Remote Peer Stream Removed");
   };
 
   close = () => {
     for (const [id, peer] of this.peers) {
       this.removePeer(id);
     }
+  };
+
+  addMediaTrack = (track: MediaStreamTrack, id?: string) => {
+    this.streams.addTrack(track);
+    if (id) {
+      this.peers.get(id).addTrack(track);
+    } else {
+      if (this.peers.size > 0) {
+        for (const [id, peer] of this.peers) {
+          peer.addTrack(track);
+        }
+      }
+    }
+  };
+
+  addMedia = (stream: MediaStream, id?: string) => {
+    stream
+      .getTracks()
+      .forEach((track) =>
+        id ? this.addMediaTrack(track, id) : this.addMediaTrack(track)
+      );
+    p("Added new Stream", this.peers);
+  };
+
+  removeMediaTrack = (track: MediaStreamTrack) => {
+    for (const [id, peer] of this.peers) {
+      peer.getSenders().forEach((rtpSender: RTCRtpSender) => {
+        if (rtpSender?.track?.kind === track.kind) {
+          peer.removeTrack(rtpSender);
+          s("Track Update Request Sent.");
+          this.socket.emit("track-update", {
+            id: peer.from.name,
+            update: "end",
+            room: this.room,
+          });
+        }
+      });
+    }
+    this.streams.removeTrack(track);
+  };
+
+  removeMedia = (stream: MediaStream) => {
+    stream.getTracks().forEach((track) => this.removeMediaTrack(track));
+    p("Removed Stream", stream);
   };
 }
 
