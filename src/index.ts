@@ -81,7 +81,13 @@ class Bun extends EventEmitter {
         this.iceServers = [...iceServers];
 
         if (this.peers.size > 0) {
-          this.socket.emit("update-socket-id", this.socket.id);
+          this.socket.emit("update-socket-id", {
+            room: this.room,
+            data: {
+              id: this.socket.id,
+              name: this.name,
+            },
+          });
         } else {
           this.join();
         }
@@ -328,6 +334,12 @@ class Bun extends EventEmitter {
       }
     );
 
+    this.socket.on("socket-update", ({ id, name }) => {
+      const peer = this.peers.get(name);
+      peer.to.socket = id;
+      s("Socket ID updated for peer.");
+    });
+
     this.socket.on("peer-disconneted", (id: string) => {
       s("Socket Disconnected", id);
       this.removePeer(id);
@@ -563,7 +575,7 @@ class Bun extends EventEmitter {
     this.peers.delete(id);
     rp("Remote Peer Removed");
 
-    this.remoteStreams.delete(id)
+    this.remoteStreams.delete(id);
     rp("Remote Peer Stream Removed");
   };
 
