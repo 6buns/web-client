@@ -72,14 +72,14 @@
 
     <script>
       const findOrCreateVid = (n) => {
-        let vid = document.querySelector(`#remote-video-${n.to}`);
+        let vid = document.querySelector(`#remote-video-${n.to.name}`);
         if (!vid) {
           vid = document.createElement("video");
           vid.setAttribute(
             "class",
             "remote w-80 h-48 bg-white rounded-2xl shadow-lg m-4"
           );
-          vid.setAttribute("id", `remote-video-${n.to}`);
+          vid.setAttribute("id", `remote-video-${n.to.name}`);
           vid.controls = true;
           vid.autoplay = true;
           vid.muted = true;
@@ -106,7 +106,7 @@
       document.querySelector(".self").poster = bun.poster;
 
       bun.on("new-peer", (event) => {
-        console.log("New Peer", bun.peers);
+        console.log("New Peer", event, bun.peers);
       });
 
       bun.on("new-remote-track", (event) => {
@@ -124,11 +124,11 @@
       });
 
       bun.on("remote-peer-track-ended", (id) => {
-        bun.remoteStreams.get(id).getVideoTracks()[0].stop();
-        document.getElementById(`remote-video-${id}`).srcObject = null;
+        // document.getElementById(`remote-video-${id}`).srcObject = null;
       });
 
       bun.on("remote-peer-track-unmuted", console.log);
+
       bun.on("remote-peer-track-muted", console.log);
 
       const handleClick = (e) => {
@@ -146,13 +146,13 @@
                 : false;
             if (state) {
               console.log("stop video");
-              bun.stopMedia("video");
+              bun.toggleMedia("video");
               document.getElementById("video").innerHTML = "Start Video";
               document.getElementById("video").setAttribute("aria-state", "0");
               break;
             } else {
               console.log("start video");
-              bun.getMedia(true, false);
+              bun.toggleMedia("video");
               document.getElementById("video").innerHTML = "Stop Video";
               document.getElementById("video").setAttribute("aria-state", "1");
               break;
@@ -166,13 +166,13 @@
                 : false;
             if (state) {
               console.log("stop Audio");
-              bun.stopMedia("audio");
+              bun.toggleMedia("audio");
               document.getElementById("audio").innerHTML = "Start Audio";
               document.getElementById("audio").setAttribute("aria-state", "0");
               break;
             } else {
               console.log("start Audio");
-              bun.getMedia(true, true);
+              bun.toggleMedia("audio");
               document.getElementById("audio").innerHTML = "Stop Audio";
               document.getElementById("audio").setAttribute("aria-state", "1");
               break;

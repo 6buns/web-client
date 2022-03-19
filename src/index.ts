@@ -6,6 +6,12 @@ const s: debug.Debugger = debug("Socket");
 const p: debug.Debugger = debug("Peer");
 const rp: debug.Debugger = debug("Remote");
 
+/**
+ * Initializes the Peer with auth variables, and media types.
+ * @param {string} apiKey API key provided, is available on dashboard.
+ * @param {boolean} hasVideo If true, peer to peer session has camera on.
+ * @param {boolean} hasAudio If true, session has microphone on.
+ */
 class Bun extends EventEmitter {
   apiKey: String;
   hasVideo?: boolean;
@@ -20,7 +26,7 @@ class Bun extends EventEmitter {
   iceServers: Array<RTCIceServer>;
   streams: MediaStream;
   remoteStreams: Map<string, readonly MediaStream[]>;
-  id: string
+  id: string;
 
   constructor({
     apiKey,
@@ -41,10 +47,10 @@ class Bun extends EventEmitter {
       video: this.hasVideo,
       audio: this.hasAudio,
     };
-    this.getMedia(this.hasVideo, this.hasAudio);
+    this.streams = new MediaStream();
+    this.startMedia(true);
     this.name = btoa(Math.random().toString()).substring(10, 5);
     this.poster = this.createPoster(this.name);
-    this.streams = new MediaStream();
     this.room = room;
     this.buffer = 50;
     this.remoteStreams = new Map();
@@ -78,19 +84,31 @@ class Bun extends EventEmitter {
       }
     );
 
-    this.socket.on("new-peer-connected", (id: string) => {
-      if (id !== this.socket.id) {
+    this.socket.on(
+      "peer-connection-request",
+      ({ from, to, data: { response, peerName } }) => {
+        if (response) {
+          this.socket.emit("connection-request", {
+            from: to,
+            to: from,
+            data: {
+              response: false,
+              peerName: this.name,
+            },
+          });
+        }
+
         s("New Peer Connected. Waiting for an offer");
         this.peers.set(
-          id,
+          peerName,
           new RTCPeerConnection({
             iceServers: this.iceServers,
           }) as CustomPeerConnection
         );
 
-        const peer = this.peers.get(id);
+        const peer = this.peers.get(peerName);
 
-        rp("Adding Tracks");
+        rp("Adding Tracks", this.streams);
         this.streams.getTracks().forEach((track) => {
           peer.addTrack(track, this.streams);
         });
@@ -99,8 +117,8 @@ class Bun extends EventEmitter {
         peer.ontrack = (
           event: CustomPeerConnectionTrackEvent<RTCTrackEvent>
         ) => {
-          const { to } = event.target as CustomPeerConnection;
-          this.remoteStreams.set(to, event.streams);
+          const { to } = event.currentTarget as CustomPeerConnection;
+          this.remoteStreams.set(to.name, event.streams);
           this.emit("new-remote-track", event);
         };
 
@@ -109,9 +127,10 @@ class Bun extends EventEmitter {
             rp("ICE Candidate", event);
             const pe = event.currentTarget as CustomPeerConnection;
             this.socket.emit("data", {
-              from: pe.from,
-              to: pe.to,
+              from: pe.from.socket,
+              to: pe.to.socket,
               data: {
+                name: peer.from.name,
                 candidate: event.candidate,
               },
             });
@@ -133,9 +152,10 @@ class Bun extends EventEmitter {
             rp("Local Description Set", pe.localDescription);
 
             pe.socket.emit("data", {
-              to: pe.to,
-              from: pe.from,
+              to: pe.to.socket,
+              from: pe.from.socket,
               data: {
+                name: pe.from.name,
                 sdp: pe.localDescription,
               },
             });
@@ -154,6 +174,7 @@ class Bun extends EventEmitter {
               break;
             case "connected":
               rp("Connected.");
+              this.emit("new-peer", peer);
               peer.checkConnection();
               break;
             case "disconnected":
@@ -193,31 +214,39 @@ class Bun extends EventEmitter {
               iceConnectionState === "closed")
           ) {
             rp("Error in Connection Establishment");
-            this.emit("peer-left", peer.to);
+            this.emit("peer-left", peer.to.name);
 
             peer.close();
             rp("Remote Peer Connection Closed");
 
-            this.peers.delete(peer.to);
+            this.peers.delete(peer.to.name);
             rp("Remote Peer Removed");
           }
         };
 
-        peer.from = this.socket.id;
-        peer.to = id;
-        peer.initiator = false;
+        peer.from = {
+          name: this.name,
+          socket: this.socket.id,
+        };
+        peer.to = {
+          name: peerName,
+          socket: from,
+        };
+        peer.initiator = response;
         peer.ignoreOffer = false;
         peer.makingOffer = false;
         peer.socket = this.socket;
+        peer.poster = this.createPoster(peerName);
       }
-    });
+    );
 
     this.socket.on(
       "data",
-      async ({ to, from, data: { sdp, candidate } }: Data) => {
-        if (this.peers.has(from) && to === this.socket.id) {
+      async ({ to, from, data: { name, sdp, candidate } }: Data) => {
+        if (this.peers.has(name) && to === this.socket.id) {
           try {
-            const peer = this.peers.get(from);
+            const peer = this.peers.get(name);
+            p("Data recieved", { name, sdp, candidate });
 
             if (sdp) {
               const offerCollision =
@@ -248,6 +277,7 @@ class Bun extends EventEmitter {
                   to: from,
                   from: to,
                   data: {
+                    name: this.name,
                     sdp: peer.localDescription,
                   },
                 });
@@ -263,7 +293,7 @@ class Bun extends EventEmitter {
                     "Should be ignored",
                     e,
                     candidate,
-                    this.peers.has(from),
+                    this.peers.has(name),
                     to === this.socket.id
                   );
               }
@@ -287,6 +317,9 @@ class Bun extends EventEmitter {
             this.emit("remote-peer-track-unmuted", id);
             break;
           case "end":
+            this.remoteStreams
+              .get(id)
+              .forEach((mediaStream) => mediaStream.getVideoTracks()[0].stop());
             this.emit("remote-peer-track-ended", id);
             break;
           default:
@@ -309,6 +342,9 @@ class Bun extends EventEmitter {
     });
   }
 
+  /**
+   * Join the room.
+   */
   join = async () => {
     await new Promise<void>((resolve, reject) => {
       s("Joining Room");
@@ -324,140 +360,14 @@ class Bun extends EventEmitter {
               s("Peers List Recieved");
               res.forEach((pid) => {
                 if (pid !== this.socket.id) {
-                  try {
-                    this.peers.set(
-                      pid,
-                      new RTCPeerConnection({
-                        iceServers: this.iceServers,
-                      }) as CustomPeerConnection
-                    );
-                  } catch (error) {
-                    throw new Error(error);
-                  }
-
-                  const newPeer = this.peers.get(pid);
-
-                  p("Adding Tracks");
-                  this.streams.getTracks().forEach((track) => {
-                    newPeer.addTrack(track, this.streams);
+                  this.socket.emit("connection-request", {
+                    from: this.socket.id,
+                    to: pid,
+                    data: {
+                      response: true,
+                      peerName: this.name,
+                    },
                   });
-                  p("Tracks Added");
-
-                  newPeer.ontrack = (
-                    event: CustomPeerConnectionTrackEvent<RTCTrackEvent>
-                  ) => {
-                    const { to } = event.target as CustomPeerConnection;
-                    this.remoteStreams.set(to, event.streams);
-                    this.emit("new-remote-track", event);
-                  };
-
-                  newPeer.onicecandidate = (
-                    event: CustomPeerConnectionIceEvent
-                  ) => {
-                    if (event.candidate) {
-                      p("ICE Candidate", event);
-                      const pe = event.currentTarget as CustomPeerConnection;
-                      this.socket.emit("data", {
-                        from: pe.from,
-                        to: pe.to,
-                        data: {
-                          candidate: event.candidate,
-                        },
-                      });
-                    }
-                  };
-
-                  newPeer.onnegotiationneeded = async (event: Event) => {
-                    const pe = event.currentTarget as CustomPeerConnection;
-                    try {
-                      pe.makingOffer = true;
-                      p("Negotiation needed", event);
-
-                      const offer = await pe.createOffer();
-                      p("Offer Generated", offer);
-
-                      if (pe.signalingState != "stable") return;
-
-                      await pe.setLocalDescription(offer);
-                      p("Local Description Set", pe.localDescription);
-
-                      pe.socket.emit("data", {
-                        to: pe.to,
-                        from: pe.from,
-                        data: {
-                          sdp: pe.localDescription,
-                        },
-                      });
-                    } catch (error) {
-                      console.error(new Error(error));
-                    } finally {
-                      pe.makingOffer = false;
-                    }
-                  };
-
-                  newPeer.onconnectionstatechange = (ev: Event) => {
-                    switch (newPeer.connectionState) {
-                      case "new":
-                      case "connecting":
-                        p("Connecting...");
-                        break;
-                      case "connected":
-                        p("Connected.");
-                        newPeer.checkConnection();
-                        break;
-                      case "disconnected":
-                        p("Disconnecting...");
-                        newPeer.checkConnection();
-                        break;
-                      case "closed":
-                        p("Offline");
-                        break;
-                      case "failed":
-                        p("Error");
-                        newPeer.checkConnection();
-                        break;
-                    }
-                  };
-
-                  newPeer.checkConnection = () => {
-                    const {
-                      connectionState,
-                      iceConnectionState,
-                      iceGatheringState,
-                      signalingState,
-                    } = newPeer;
-                    if (
-                      connectionState === "connected" &&
-                      iceConnectionState === "connected" &&
-                      iceGatheringState === "complete" &&
-                      signalingState === "stable"
-                    ) {
-                      p("Connection Established.");
-                    } else if (
-                      (connectionState === "disconnected" ||
-                        connectionState === "closed" ||
-                        connectionState === "failed") &&
-                      (iceConnectionState === "disconnected" ||
-                        iceConnectionState === "failed" ||
-                        iceConnectionState === "closed")
-                    ) {
-                      p("Error in Connection Establishment");
-                      this.emit("peer-left", newPeer.to);
-
-                      newPeer.close();
-                      rp("Remote Peer Connection Closed");
-
-                      this.peers.delete(newPeer.to);
-                      rp("Remote Peer Removed");
-                    }
-                  };
-
-                  newPeer.from = this.socket.id;
-                  newPeer.to = pid;
-                  newPeer.initiator = true;
-                  newPeer.ignoreOffer = false;
-                  newPeer.makingOffer = false;
-                  newPeer.socket = this.socket;
                 }
               });
               p("Establishing Peer Connection to Remote Peer.");
@@ -469,27 +379,41 @@ class Bun extends EventEmitter {
     });
   };
 
-  addMediaTrack = (track: MediaStreamTrack) => {
+  /**
+   * Add media track, to remote stream.
+   * @param track
+   * @param id
+   */
+  addMediaTrack = (track: MediaStreamTrack, id?: string) => {
     this.streams.addTrack(track);
-    if (this.peers.size > 0) {
-      for (const [id, peer] of this.peers) {
-        peer.addTrack(track);
+    if (id) {
+      this.peers.get(id).addTrack(track);
+    } else {
+      if (this.peers.size > 0) {
+        for (const [id, peer] of this.peers) {
+          peer.addTrack(track);
+        }
       }
     }
   };
 
-  addMedia = (stream: MediaStream) => {
-    stream.getTracks().forEach((track) => this.addMediaTrack(track));
+  addMedia = (stream: MediaStream, id?: string) => {
+    stream
+      .getTracks()
+      .forEach((track) =>
+        id ? this.addMediaTrack(track, id) : this.addMediaTrack(track)
+      );
     p("Added new Stream", this.peers);
   };
 
   removeMediaTrack = (track: MediaStreamTrack) => {
     for (const [id, peer] of this.peers) {
-      peer.getSenders().forEach((rtpSender) => {
+      peer.getSenders().forEach((rtpSender: RTCRtpSender) => {
         if (rtpSender?.track?.kind === track.kind) {
           peer.removeTrack(rtpSender);
+          s("Track Update Request Sent.");
           this.socket.emit("track-update", {
-            id: peer.from,
+            id: peer.from.name,
             update: "end",
             room: this.room,
           });
@@ -504,18 +428,30 @@ class Bun extends EventEmitter {
     p("Removed Stream", stream);
   };
 
-  getMedia = (video: boolean, audio: boolean) =>
-    navigator.mediaDevices
-      .getUserMedia({
-        video,
-        audio,
-      })
-      .then((stream) => {
-        p(stream);
-        this.addStream(stream);
-        this.addMedia(stream);
-      })
-      .catch(console.error);
+  startMedia = async (start?: boolean) => {
+    const stream = (await this.getMedia()) as MediaStream;
+    this.addStream(stream);
+    if (start) {
+      this.streams = stream;
+    } else {
+      this.streams = stream;
+      this.replaceMedia(stream);
+    }
+  };
+
+  getMedia = () =>
+    new Promise((resolve, reject) => {
+      navigator.mediaDevices
+        .getUserMedia({
+          video: this.media.video,
+          audio: this.media.audio,
+        })
+        .then((stream) => {
+          p(stream);
+          resolve(stream);
+        })
+        .catch(reject);
+    });
 
   screenShare = () =>
     navigator.mediaDevices
@@ -528,22 +464,19 @@ class Bun extends EventEmitter {
         const track = stream.getVideoTracks()[0];
         p("Sharing Screen", track);
 
-        track.onended = (ev) => {
+        track.onended = async (ev) => {
           p("Stop Sharing Screen");
           this.emit("screen-share-ended", ev);
-          this.switchToCam();
+          // this.removeMedia(this.streams);
+          // const stream = (await this.getMedia()) as MediaStream;
+          this.replaceMedia(this.streams);
+          this.addStream(this.streams);
         };
 
-        this.removeMedia(this.streams);
-        this.addMedia(stream);
+        this.replaceMedia(stream);
         this.addStream(stream);
       })
       .catch(console.error);
-
-  switchToCam = () => {
-    this.removeMedia(this.streams);
-    this.getMedia(this.media.video, this.media.audio);
-  };
 
   addStream = (stream: MediaStream) => {
     const video: HTMLVideoElement = document.querySelector(".self");
@@ -553,35 +486,22 @@ class Bun extends EventEmitter {
     };
   };
 
-  stopMedia = (mediaType?: string, peerId?: string) => {
+  toggleMedia = (mediaType?: string, peerId?: string) => {
     if (mediaType) {
       switch (mediaType) {
         case "video":
           this.streams.getVideoTracks().forEach((track) => {
-            this.removeMediaTrack(track);
-            const video: HTMLVideoElement = document.querySelector(".self");
-            video.srcObject = null;
-            track.stop();
+            track.enabled = !track.enabled;
           });
           break;
         case "audio":
           this.streams.getAudioTracks().forEach((track) => {
-            this.removeMediaTrack(track);
-            track.stop();
-          });
-          break;
-        case "screen":
-          this.streams.getVideoTracks().forEach((track) => {
-            this.removeMediaTrack(track);
-            track.stop();
+            track.enabled = !track.enabled;
           });
           break;
         case "all":
           this.streams.getTracks().forEach((track) => {
-            this.removeMediaTrack(track);
-            const video: HTMLVideoElement = document.querySelector(".self");
-            video.srcObject = null;
-            track.stop();
+            track.enabled = !track.enabled;
           });
           break;
       }
@@ -628,16 +548,100 @@ class Bun extends EventEmitter {
 
     return uri;
   };
+
+  getLocalMedia = (id: string) => {
+    return this.peers.get(id).getLocalStream();
+  };
+
+  getRemoteStream = (id: string) => {
+    return this.peers.get(id).getRemoteStream();
+  };
+
+  /**
+   * Replace Media Track, handles three states,
+   *  - if track is null in RTPSender
+   *  - if RTPSender track is not enabled,
+   *  - if
+   *
+   * @param track
+   * @param id
+   * @returns
+   */
+  replaceMediaTrack = (track: MediaStreamTrack, id?: string) => {
+    if (id) {
+      this.peers
+        .get(id)
+        .getSenders()
+        .forEach((rtpSender: RTCRtpSender) => {
+          if (rtpSender?.track?.kind === track.kind) {
+            track.enabled = true;
+            rtpSender.replaceTrack(track);
+          }
+        });
+    } else {
+      for (const [id, peer] of this.peers) {
+        peer.getSenders().forEach((rtpSender: RTCRtpSender) => {
+          if (rtpSender?.track?.kind === track.kind) {
+            rtpSender.replaceTrack(track);
+          }
+        });
+      }
+    }
+  };
+
+  replaceMedia = (media: MediaStream, id?: string) => {
+    return new Promise((resolve, reject) => {
+      try {
+        if (id) {
+          for (const track of media.getTracks()) {
+            id
+              ? this.replaceMediaTrack(track, id)
+              : this.replaceMediaTrack(track);
+            p("Replacing Track", track, id);
+          }
+        } else {
+          for (const [id, peer] of this.peers) {
+            if (peer.getSenders().length > 0) {
+              for (const track of media.getTracks()) {
+                this.replaceMediaTrack(track, id);
+                p("Replacing Track", track, id);
+              }
+            }
+          }
+        }
+        resolve(true);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  removePeer = (id: string) => {
+    const peer = this.peers.get(id);
+
+    peer.close();
+
+    this.peers.delete(id);
+  };
+
+  close = () => {
+    for (const [id, peer] of this.peers) {
+      this.removePeer(id);
+    }
+  };
 }
 
 interface CustomPeerConnection extends RTCPeerConnection {
-  from: string;
-  to: string;
+  from: { name: string; socket: string };
+  to: { name: string; socket: string };
   initiator: boolean;
   ignoreOffer: boolean;
   makingOffer: boolean;
   socket: Socket;
+  poster: string;
   checkConnection: () => void;
+  getRemoteStream: () => [MediaStreamTrack];
+  getLocalStream: () => [MediaStreamTrack];
 }
 
 type CustomPeerConnectionTrackEvent<T> = RTCTrackEvent;
@@ -647,6 +651,7 @@ interface Data {
   to: string;
   from: string;
   data: {
+    name: string;
     sdp: RTCSessionDescription;
     candidate: RTCIceCandidate;
   };
