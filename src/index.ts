@@ -1,11 +1,12 @@
 import { io, Socket } from "socket.io-client";
 import debug from "debug";
 import { EventEmitter } from "events";
+// ts-ignore
+import { sign, verify } from "jsonwebtoken";
 
 const s: debug.Debugger = debug("Socket");
 const p: debug.Debugger = debug("Peer");
 const rp: debug.Debugger = debug("Remote");
-const jwt = require("jsonwebtoken");
 
 /**
  * Initializes the Peer with auth variables, and media types.
@@ -14,7 +15,7 @@ const jwt = require("jsonwebtoken");
  * @param {boolean} hasAudio If true, session has microphone on.
  */
 class Bun extends EventEmitter {
-  secret: String;
+  secret: string;
   hasVideo?: boolean;
   hasAudio?: boolean;
   media: { video: boolean; audio: boolean };
@@ -107,7 +108,7 @@ class Bun extends EventEmitter {
 
   handleMessage = async ({ type, from, to, room, token }) => {
     // decode message using token
-    jwt.verify(token, this.secret, async (err: Error, data: any) => {
+    verify(token, this.secret, async (err: Error, data: any) => {
       if (err) {
         // error in decoding
         s("Token Decoding Error", err);
@@ -405,7 +406,7 @@ class Bun extends EventEmitter {
     { from, to, room, data }: Data,
     func?: Function
   ) => {
-    const token = jwt.sign({ data }, this.secret);
+    const token = sign({ data }, this.secret);
     this.socket.emit("message", { type, from, to, room, token }, func);
   };
 

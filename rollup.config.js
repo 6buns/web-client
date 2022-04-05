@@ -22,11 +22,10 @@ export default {
         typescript({
             compilerOptions: {
                 downlevelIteration: true,
-                declaration: true,
-                outDir: 'dist',
-                emitDeclarationOnly: true,
-                isolatedModules: true,
-
+                // declaration: true,
+                // outDir: 'dist',
+                // emitDeclarationOnly: true,
+                // isolatedModules: true,
             }
         }),
         builtins(),
