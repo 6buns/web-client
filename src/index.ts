@@ -5,6 +5,7 @@ import { EventEmitter } from "events";
 const s: debug.Debugger = debug("Socket");
 const p: debug.Debugger = debug("Peer");
 const rp: debug.Debugger = debug("Remote");
+const jwt = require("jsonwebtoken");
 
 /**
  * Initializes the Peer with auth variables, and media types.
@@ -13,7 +14,7 @@ const rp: debug.Debugger = debug("Remote");
  * @param {boolean} hasAudio If true, session has microphone on.
  */
 class Bun extends EventEmitter {
-  apiKey: String;
+  secret: String;
   hasVideo?: boolean;
   hasAudio?: boolean;
   media: { video: boolean; audio: boolean };
@@ -29,18 +30,18 @@ class Bun extends EventEmitter {
   id: string;
 
   constructor({
-    apiKey,
+    secret,
     room,
     hasVideo,
     hasAudio,
   }: {
-    apiKey: string;
+    secret: string;
     room: string;
     hasVideo?: boolean;
     hasAudio?: boolean;
   }) {
     super();
-    this.apiKey = apiKey;
+    this.secret = secret;
     this.hasAudio = hasAudio || true;
     this.hasVideo = hasVideo || true;
     this.media = {
@@ -70,7 +71,7 @@ class Bun extends EventEmitter {
     this.socket = io("https://p2p.6buns.com", {
       transports: ["websocket", "polling"],
       auth: {
-        key: this.apiKey,
+        key: this.secret,
       },
     });
 
@@ -81,7 +82,7 @@ class Bun extends EventEmitter {
         this.iceServers = [...iceServers];
 
         if (this.peers.size > 0) {
-          this.socket.emit("update-socket-id", {
+          this.sendMessage("update-socket-id", {
             room: this.room,
             data: {
               id: this.socket.id,
@@ -94,257 +95,319 @@ class Bun extends EventEmitter {
       }
     );
 
-    this.socket.on(
-      "peer-connection-request",
-      ({ from, to, data: { response, peerName } }) => {
-        if (response) {
-          this.socket.emit("connection-request", {
-            from: to,
-            to: from,
-            data: {
-              response: false,
-              peerName: this.name,
-            },
-          });
-        }
-
-        s("New Peer Connected. Waiting for an offer");
-        this.peers.set(
-          peerName,
-          new RTCPeerConnection({
-            iceServers: this.iceServers,
-          }) as CustomPeerConnection
-        );
-
-        const peer = this.peers.get(peerName);
-
-        rp("Adding Tracks", this.streams);
-        this.streams.getTracks().forEach((track) => {
-          peer.addTrack(track, this.streams);
-        });
-        rp("Tracks Added");
-
-        peer.ontrack = (
-          event: CustomPeerConnectionTrackEvent<RTCTrackEvent>
-        ) => {
-          const { to } = event.currentTarget as CustomPeerConnection;
-          this.remoteStreams.set(to.name, event.streams);
-          this.emit("new-remote-track", event);
-        };
-
-        peer.onicecandidate = (event: CustomPeerConnectionIceEvent) => {
-          if (event.candidate) {
-            rp("ICE Candidate", event);
-            const pe = event.currentTarget as CustomPeerConnection;
-            this.socket.emit("data", {
-              from: pe.from.socket,
-              to: pe.to.socket,
-              data: {
-                name: peer.from.name,
-                candidate: event.candidate,
-              },
-            });
-          }
-        };
-
-        peer.onnegotiationneeded = async (event: Event) => {
-          const pe = event.currentTarget as CustomPeerConnection;
-          try {
-            pe.makingOffer = true;
-            rp("Negotiation needed", event);
-
-            const offer = await pe.createOffer();
-            rp("Offer Generated", offer);
-
-            if (pe.signalingState != "stable") return;
-
-            await pe.setLocalDescription(offer);
-            rp("Local Description Set", pe.localDescription);
-
-            pe.socket.emit("data", {
-              to: pe.to.socket,
-              from: pe.from.socket,
-              data: {
-                name: pe.from.name,
-                sdp: pe.localDescription,
-              },
-            });
-          } catch (error) {
-            console.error(new Error(error));
-          } finally {
-            pe.makingOffer = false;
-          }
-        };
-
-        peer.onconnectionstatechange = (ev: Event) => {
-          switch (peer.connectionState) {
-            case "new":
-            case "connecting":
-              rp("Connecting...");
-              break;
-            case "connected":
-              rp("Connected.");
-              this.emit("new-peer", peer);
-              peer.checkConnection();
-              break;
-            case "disconnected":
-              rp("Disconnecting...");
-              peer.checkConnection();
-              break;
-            case "closed":
-              rp("Offline");
-              break;
-            case "failed":
-              rp("Error");
-              peer.checkConnection();
-              break;
-          }
-        };
-
-        peer.checkConnection = () => {
-          const {
-            connectionState,
-            iceConnectionState,
-            iceGatheringState,
-            signalingState,
-          } = peer;
-          if (
-            connectionState === "connected" &&
-            iceConnectionState === "connected" &&
-            iceGatheringState === "complete" &&
-            signalingState === "stable"
-          ) {
-            rp("Connection Established.");
-          } else if (
-            (connectionState === "disconnected" ||
-              connectionState === "closed" ||
-              connectionState === "failed") &&
-            (iceConnectionState === "disconnected" ||
-              iceConnectionState === "failed" ||
-              iceConnectionState === "closed")
-          ) {
-            rp("Error in Connection Establishment");
-            this.emit("peer-left", peer.to.name);
-
-            this.removePeer(peer.to.name);
-          }
-        };
-
-        peer.from = {
-          name: this.name,
-          socket: this.socket.id,
-        };
-        peer.to = {
-          name: peerName,
-          socket: from,
-        };
-        peer.initiator = response;
-        peer.ignoreOffer = false;
-        peer.makingOffer = false;
-        peer.socket = this.socket;
-        peer.poster = this.createPoster(peerName);
-      }
+    this.socket.on("message", ({ type, from, to, room, token }) =>
+      this.handleMessage({ type, from, to, room, token })
     );
 
-    this.socket.on(
-      "data",
-      async ({ to, from, data: { name, sdp, candidate } }: Data) => {
-        if (this.peers.has(name) && to === this.socket.id) {
-          try {
-            const peer = this.peers.get(name);
-            p("Data recieved", { name, sdp, candidate });
-
-            if (sdp) {
-              const offerCollision =
-                sdp.type === "offer" &&
-                (peer.makingOffer || peer.signalingState !== "stable");
-
-              peer.ignoreOffer = !peer.initiator && offerCollision;
-
-              if (peer.ignoreOffer) return;
-
-              if (offerCollision) {
-                await Promise.all([
-                  peer.setLocalDescription({ type: "rollback" }),
-                  peer.setRemoteDescription(sdp),
-                ]);
-              } else {
-                p("Answer Recieved", sdp);
-                await peer.setRemoteDescription(sdp);
-              }
-              if (sdp.type === "offer") {
-                const answer = await peer.createAnswer();
-                p("Answer Created", answer);
-
-                await peer.setLocalDescription(answer);
-                p("Local description set as answer", peer.localDescription);
-
-                this.socket.emit("data", {
-                  to: from,
-                  from: to,
-                  data: {
-                    name: this.name,
-                    sdp: peer.localDescription,
-                  },
-                });
-              }
-            } else if (candidate) {
-              try {
-                await peer.addIceCandidate(candidate);
-                p("Added Ice Candidate", candidate);
-              } catch (e) {
-                if (!peer.ignoreOffer) p("Error adding IceCandidate", e);
-                else
-                  p(
-                    "Should be ignored",
-                    e,
-                    candidate,
-                    this.peers.has(name),
-                    to === this.socket.id
-                  );
-              }
-            }
-          } catch (error) {
-            s("Socket Error", error);
-          }
-        }
-      }
-    );
-
-    this.socket.on(
-      "track-update",
-      ({ id, update }: { id: string; update: string }) => {
-        s("Track Update Recieved", id, update);
-        switch (update) {
-          case "mute":
-            this.emit("remote-peer-track-muted", id);
-            break;
-          case "unmute":
-            this.emit("remote-peer-track-unmuted", id);
-            break;
-          case "end":
-            this.remoteStreams
-              .get(id)
-              .forEach((mediaStream) => mediaStream.getVideoTracks()[0].stop());
-            this.emit("remote-peer-track-ended", id);
-            break;
-          default:
-            break;
-        }
-      }
-    );
-
-    this.socket.on("socket-update", ({ id, name }) => {
-      const peer = this.peers.get(name);
-      peer.to.socket = id;
-      s("Socket ID updated for peer.");
-    });
-
-    this.socket.on("peer-disconneted", (id: string) => {
+    this.socket.on("peer-disconnected", (id) => {
       s("Socket Disconnected", id);
       this.removePeer(id);
     });
   }
+
+  handleMessage = async ({ type, from, to, room, token }) => {
+    // decode message using token
+    jwt.verify(token, this.secret, async (err: Error, data: any) => {
+      if (err) {
+        // error in decoding
+        s("Token Decoding Error", err);
+      }
+
+      if (data) {
+        // switch to event type
+        switch (type) {
+          // invoke required function
+          case "peer-connection-request": {
+            this.onPeerConnectRequest({ from, to, data });
+            break;
+          }
+          case "data": {
+            this.handlePeerData({ from, to, data });
+            break;
+          }
+          case "track-update": {
+            this.handleTrackUpdate(data);
+            break;
+          }
+          case "socket-update": {
+            this.handleSocketUpdate(data);
+            break;
+          }
+          case "error": {
+            const { error } = data;
+            s("Socket Server Error", error);
+            this.emit("error", error);
+            break;
+          }
+          case "ping": {
+            s(`PING from socket server.`);
+            const data = await this.getStats();
+            this.sendMessage("PONG", { data });
+            break;
+          }
+          default: {
+            s("Unknown Event Type", { type, from, to, room, data });
+            break;
+          }
+        }
+      }
+    });
+  };
+
+  onPeerConnectRequest = ({ from, to, data: { response, peerName } }) => {
+    if (response) {
+      this.sendMessage("connection-request", {
+        from: to,
+        to: from,
+        data: {
+          response: false,
+          peerName: this.name,
+        },
+      });
+    }
+
+    s("New Peer Connected. Waiting for an offer");
+    this.peers.set(
+      peerName,
+      new RTCPeerConnection({
+        iceServers: this.iceServers,
+      }) as CustomPeerConnection
+    );
+
+    const peer = this.peers.get(peerName);
+
+    rp("Adding Tracks", this.streams);
+    this.streams.getTracks().forEach((track) => {
+      peer.addTrack(track, this.streams);
+    });
+    rp("Tracks Added");
+
+    peer.ontrack = (event: CustomPeerConnectionTrackEvent<RTCTrackEvent>) => {
+      const { to } = event.currentTarget as CustomPeerConnection;
+      this.remoteStreams.set(to.name, event.streams);
+      this.emit("new-remote-track", event);
+    };
+
+    peer.onicecandidate = (event: CustomPeerConnectionIceEvent) => {
+      if (event.candidate) {
+        rp("ICE Candidate", event);
+        const pe = event.currentTarget as CustomPeerConnection;
+        this.sendMessage("data", {
+          from: pe.from.socket,
+          to: pe.to.socket,
+          data: {
+            name: peer.from.name,
+            candidate: event.candidate,
+          },
+        });
+      }
+    };
+
+    peer.onnegotiationneeded = async (event: Event) => {
+      const pe = event.currentTarget as CustomPeerConnection;
+      try {
+        pe.makingOffer = true;
+        rp("Negotiation needed", event);
+
+        const offer = await pe.createOffer();
+        rp("Offer Generated", offer);
+
+        if (pe.signalingState != "stable") return;
+
+        await pe.setLocalDescription(offer);
+        rp("Local Description Set", pe.localDescription);
+
+        this.sendMessage("data", {
+          to: pe.to.socket,
+          from: pe.from.socket,
+          data: {
+            name: pe.from.name,
+            sdp: pe.localDescription,
+          },
+        });
+      } catch (error) {
+        console.error(new Error(error));
+      } finally {
+        pe.makingOffer = false;
+      }
+    };
+
+    peer.onconnectionstatechange = (ev: Event) => {
+      switch (peer.connectionState) {
+        case "new":
+        case "connecting":
+          rp("Connecting...");
+          break;
+        case "connected":
+          rp("Connected.");
+          this.emit("new-peer", peer);
+          peer.checkConnection();
+          break;
+        case "disconnected":
+          rp("Disconnecting...");
+          peer.checkConnection();
+          break;
+        case "closed":
+          rp("Offline");
+          break;
+        case "failed":
+          rp("Error");
+          peer.checkConnection();
+          break;
+      }
+    };
+
+    peer.checkConnection = () => {
+      const {
+        connectionState,
+        iceConnectionState,
+        iceGatheringState,
+        signalingState,
+      } = peer;
+      if (
+        connectionState === "connected" &&
+        iceConnectionState === "connected" &&
+        iceGatheringState === "complete" &&
+        signalingState === "stable"
+      ) {
+        rp("Connection Established.");
+      } else if (
+        (connectionState === "disconnected" ||
+          connectionState === "closed" ||
+          connectionState === "failed") &&
+        (iceConnectionState === "disconnected" ||
+          iceConnectionState === "failed" ||
+          iceConnectionState === "closed")
+      ) {
+        rp("Error in Connection Establishment");
+        this.emit("peer-left", peer.to.name);
+
+        this.removePeer(peer.to.name);
+      }
+    };
+
+    peer.from = {
+      name: this.name,
+      socket: this.socket.id,
+    };
+    peer.to = {
+      name: peerName,
+      socket: from,
+    };
+    peer.initiator = response;
+    peer.ignoreOffer = false;
+    peer.makingOffer = false;
+    peer.socket = this.socket;
+    peer.poster = this.createPoster(peerName);
+  };
+
+  handlePeerData = async ({ to, from, data }: Data) => {
+    const { name, sdp, candidate }: any = data;
+    if (this.peers.has(name) && to === this.socket.id) {
+      try {
+        const peer = this.peers.get(name);
+        p("Data recieved", { name, sdp, candidate });
+
+        if (sdp) {
+          const offerCollision =
+            sdp.type === "offer" &&
+            (peer.makingOffer || peer.signalingState !== "stable");
+
+          peer.ignoreOffer = !peer.initiator && offerCollision;
+
+          if (peer.ignoreOffer) return;
+
+          if (offerCollision) {
+            await Promise.all([
+              peer.setLocalDescription({ type: "rollback" }),
+              peer.setRemoteDescription(sdp),
+            ]);
+          } else {
+            p("Answer Recieved", sdp);
+            await peer.setRemoteDescription(sdp);
+          }
+          if (sdp.type === "offer") {
+            const answer = await peer.createAnswer();
+            p("Answer Created", answer);
+
+            await peer.setLocalDescription(answer);
+            p("Local description set as answer", peer.localDescription);
+
+            this.sendMessage("data", {
+              to: from,
+              from: to,
+              data: {
+                name: this.name,
+                sdp: peer.localDescription,
+              },
+            });
+          }
+        } else if (candidate) {
+          try {
+            await peer.addIceCandidate(candidate);
+            p("Added Ice Candidate", candidate);
+          } catch (e) {
+            if (!peer.ignoreOffer) p("Error adding IceCandidate", e);
+            else
+              p(
+                "Should be ignored",
+                e,
+                candidate,
+                this.peers.has(name),
+                to === this.socket.id
+              );
+          }
+        }
+      } catch (error) {
+        s("Socket Error", error);
+      }
+    }
+  };
+
+  handleTrackUpdate = ({ id, update }: { id: string; update: string }) => {
+    s("Track Update Recieved", id, update);
+    switch (update) {
+      case "mute":
+        this.emit("remote-peer-track-muted", id);
+        break;
+      case "unmute":
+        this.emit("remote-peer-track-unmuted", id);
+        break;
+      case "end":
+        this.remoteStreams
+          .get(id)
+          .forEach((mediaStream) => mediaStream.getVideoTracks()[0].stop());
+        this.emit("remote-peer-track-ended", id);
+        break;
+      default:
+        break;
+    }
+  };
+
+  handleSocketUpdate = ({ id, name }) => {
+    const peer = this.peers.get(name);
+    peer.to.socket = id;
+    s("Socket ID updated for peer.");
+  };
+
+  getStats = () => {
+    return new Promise<object>(async (resolve, reject) => {
+      const statsData = {};
+      for (const [id, peer] of this.peers) {
+        statsData[id] = await peer.getStats(null);
+      }
+      resolve(statsData);
+    });
+  };
+
+  sendMessage = (
+    type: string,
+    { from, to, room, data }: Data,
+    func?: Function
+  ) => {
+    const token = jwt.sign({ data }, this.secret);
+    this.socket.emit("message", { type, from, to, room, token }, func);
+  };
 
   /**
    * Join the room with the provided room_id.
@@ -352,19 +415,20 @@ class Bun extends EventEmitter {
   join = async () => {
     await new Promise<void>((resolve, reject) => {
       s("Joining Room");
-      this.socket.emit(
-        "join-room",
-        this.room,
-        ({ res, err }: { res: Array<keyof Socket>; err: string }) => {
-          if (err) {
-            s("Socket Error", err);
+      this.sendMessage(
+        "room-join",
+        { room: this.room, data: { name: this.name } },
+        ({ res, error }: { res: Array<keyof Socket>; error: string }) => {
+          if (error) {
+            this.emit("error", error);
+            s("Room Join Error", error);
           } else if (res) {
             s("Room Joined", res);
             if (res.length > 1) {
               s("Peers List Recieved");
               res.forEach((pid) => {
                 if (pid !== this.socket.id) {
-                  this.socket.emit("connection-request", {
+                  this.sendMessage("connection-request", {
                     from: this.socket.id,
                     to: pid,
                     data: {
@@ -613,10 +677,12 @@ class Bun extends EventEmitter {
         if (rtpSender?.track?.kind === track.kind) {
           peer.removeTrack(rtpSender);
           s("Track Update Request Sent.");
-          this.socket.emit("track-update", {
-            id: peer.from.name,
-            update: "end",
+          this.sendMessage("track-update", {
             room: this.room,
+            data: {
+              id: peer.from.name,
+              update: "end",
+            },
           });
         }
       });
@@ -647,13 +713,33 @@ type CustomPeerConnectionTrackEvent<T> = RTCTrackEvent;
 type CustomPeerConnectionIceEvent = RTCPeerConnectionIceEvent;
 
 interface Data {
-  to: string;
-  from: string;
-  data: {
-    name: string;
-    sdp: RTCSessionDescription;
-    candidate: RTCIceCandidate;
-  };
+  to?: string;
+  from?: string;
+  room?: string;
+  data: object;
 }
 
 export default Bun;
+
+function token(token: any): (...args: any[]) => void {
+  throw new Error("Function not implemented.");
+}
+/**
+ * On Room End,
+ * fetch room data from redis,
+ * each peer-minute
+ * const time = 0
+ * peers.forEach(peer => {
+ *  if (peer.left) {
+ *    time += (peer.left - peer.join)
+ *  } else {
+ *    time += room.endedAt - room.createdAt
+ *  }
+ * })
+ *
+ * Charge for minutes used,
+ * const minutes = Math.ceil(time/60000)
+ *
+ * charge stripe_id, attached with apikey
+ * 0.015 * minutes
+ */

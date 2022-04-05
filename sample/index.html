@@ -106,7 +106,7 @@
       document.querySelector(".self").poster = bun.poster;
 
       bun.on("new-peer", (event) => {
-        console.log("New Peer", event, bun.peers);
+        console.log("New Peer", event);
       });
 
       bun.on("new-remote-track", (event) => {
@@ -115,21 +115,16 @@
       });
 
       bun.on("peer-left", (to) => {
+        console.log('Peer Left', to)
         document.querySelector(`#remote-video-${to}`).remove();
       });
+
+      bun.on("error", (error) => console.error(error));
 
       bun.on("screen-share-ended", (e) => {
         console.log(e);
         document.getElementById("screen").disabled = false;
       });
-
-      bun.on("remote-peer-track-ended", (id) => {
-        // document.getElementById(`remote-video-${id}`).srcObject = null;
-      });
-
-      bun.on("remote-peer-track-unmuted", console.log);
-
-      bun.on("remote-peer-track-muted", console.log);
 
       const handleClick = (e) => {
         switch (e.id) {
