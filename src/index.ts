@@ -2,7 +2,7 @@ import { io, Socket } from "socket.io-client";
 import debug from "debug";
 import { EventEmitter } from "events";
 // ts-ignore
-import { sign, verify } from "jsonwebtoken";
+import * as jose from "jose";
 
 const s: debug.Debugger = debug("Socket");
 const p: debug.Debugger = debug("Peer");
@@ -15,7 +15,7 @@ const rp: debug.Debugger = debug("Remote");
  * @param {boolean} hasAudio If true, session has microphone on.
  */
 class Bun extends EventEmitter {
-  secret: string;
+  secret: jose.KeyLike;
   hasVideo?: boolean;
   hasAudio?: boolean;
   media: { video: boolean; audio: boolean };
@@ -36,7 +36,7 @@ class Bun extends EventEmitter {
     hasVideo,
     hasAudio,
   }: {
-    secret: string;
+    secret: jose.KeyLike;
     room: string;
     hasVideo?: boolean;
     hasAudio?: boolean;
@@ -108,12 +108,8 @@ class Bun extends EventEmitter {
 
   handleMessage = async ({ type, from, to, room, token }) => {
     // decode message using token
-    verify(token, this.secret, async (err: Error, data: any) => {
-      if (err) {
-        // error in decoding
-        s("Token Decoding Error", err);
-      }
-
+    try {
+      const data: any = await jose.jwtVerify(token, this.secret);
       if (data) {
         // switch to event type
         switch (type) {
@@ -152,7 +148,10 @@ class Bun extends EventEmitter {
           }
         }
       }
-    });
+    } catch (error) {
+      // error in decoding
+      s("Token Decoding Error", error);
+    }
   };
 
   onPeerConnectRequest = ({ from, to, data: { response, peerName } }) => {
@@ -401,12 +400,18 @@ class Bun extends EventEmitter {
     });
   };
 
-  sendMessage = (
+  sendMessage = async (
     type: string,
     { from, to, room, data }: Data,
     func?: Function
   ) => {
-    const token = sign({ data }, this.secret);
+    // const token = sign({ data }, this.secret);
+    const token = await new jose.SignJWT({ data })
+      .setProtectedHeader({ alg: "ES256" })
+      .setIssuedAt()
+      .setExpirationTime("2h")
+      .sign(this.secret);
+
     this.socket.emit("message", { type, from, to, room, token }, func);
   };
 
