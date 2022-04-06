@@ -2,5 +2,6 @@
   "include": ["src/index.ts"],
   "compilerOptions": {
     "rootDir": "src"
-  }
+  },
+  "exclude": ["node_modules"]
 }
