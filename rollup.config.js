@@ -11,11 +11,11 @@ export default {
     input: 'src/index.ts',
     output: [{
         name: 'Bun',
-        file: 'dist/bundle.js',
+        file: 'dist/bundle.iife.js',
         format: 'iife'
     }, {
         name: 'Bun',
-        file: 'dist/bundle.module.js',
+        file: 'dist/bundle.cjs.js',
         format: 'cjs'
     }],
     plugins: [
