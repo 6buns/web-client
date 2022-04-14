@@ -2,7 +2,6 @@ import { io, Socket } from "socket.io-client";
 import debug from "debug";
 import { EventEmitter } from "events";
 // ts-ignore
-import * as jose from "jose";
 
 const s: debug.Debugger = debug("Socket");
 const p: debug.Debugger = debug("Peer");
@@ -15,7 +14,7 @@ const rp: debug.Debugger = debug("Remote");
  * @param {boolean} hasAudio If true, session has microphone on.
  */
 class Bun extends EventEmitter {
-  secret: jose.KeyLike;
+  secret: string;
   hasVideo?: boolean;
   hasAudio?: boolean;
   media: { video: boolean; audio: boolean };
@@ -28,6 +27,8 @@ class Bun extends EventEmitter {
   iceServers: Array<RTCIceServer>;
   streams: MediaStream;
   remoteStreams: Map<string, readonly MediaStream[]>;
+  sendDataChannels: Map<string, RTCDataChannel>;
+  recieveDataChannels: Map<string, RTCDataChannel>;
   id: string;
 
   constructor({
@@ -36,7 +37,7 @@ class Bun extends EventEmitter {
     hasVideo,
     hasAudio,
   }: {
-    secret: jose.KeyLike;
+    secret: string;
     room: string;
     hasVideo?: boolean;
     hasAudio?: boolean;
@@ -56,6 +57,8 @@ class Bun extends EventEmitter {
     this.room = room;
     this.buffer = 50;
     this.remoteStreams = new Map();
+    this.sendDataChannels = new Map();
+    this.recieveDataChannels = new Map();
     this.peers = new Map();
     this.iceServers = [];
     this.id = btoa(Math.random().toString())
@@ -109,7 +112,7 @@ class Bun extends EventEmitter {
   handleMessage = async ({ type, from, to, room, token }) => {
     // decode message using token
     try {
-      const data: any = await jose.jwtVerify(token, this.secret);
+      const data: any = this.decrypt(token);
       if (data) {
         // switch to event type
         switch (type) {
@@ -136,12 +139,13 @@ class Bun extends EventEmitter {
             this.emit("error", error);
             break;
           }
-          case "ping": {
-            s(`PING from socket server.`);
-            const data = await this.getStats();
-            this.sendMessage("PONG", { data });
-            break;
-          }
+          // case "ping": {
+          //   s(`PING from socket server.`);
+          //   const data = await this.getStats();
+          //   p(data);
+          //   // this.sendMessage("PONG", { data });
+          //   break;
+          // }
           default: {
             s("Unknown Event Type", { type, from, to, room, data });
             break;
@@ -231,6 +235,37 @@ class Bun extends EventEmitter {
         pe.makingOffer = false;
       }
     };
+
+    peer.ondatachannel = (event: RTCDataChannelEvent) => {
+      this.recieveDataChannels.set(peerName, event.channel);
+
+      event.channel.onmessage = (event: MessageEvent) => {
+        this.emit("peer-data-recieved", event.data);
+        p("Recieve Data Channel Message Recieved : ", event.data);
+      };
+
+      event.channel.onopen = (event: Event) => {
+        this.emit("peer-data-open", event);
+        p("Recieve Data Channel Open : ", event);
+      };
+
+      event.channel.onclose = (event: Event) => {
+        this.emit("peer-data-closed", event);
+        p("Recieve Data Channel Closed : ", event);
+      };
+    };
+
+    const sendChannel = peer.createDataChannel("sendChannel");
+
+    sendChannel.onopen = (event) => {
+      p("Send Data Channel Open : ", event);
+    };
+
+    sendChannel.onclose = (event) => {
+      p("Send Data Channel Closed : ", event);
+    };
+
+    this.sendDataChannels.set(peerName, sendChannel);
 
     peer.onconnectionstatechange = (ev: Event) => {
       switch (peer.connectionState) {
@@ -406,14 +441,18 @@ class Bun extends EventEmitter {
     func?: Function
   ) => {
     // const token = sign({ data }, this.secret);
-    const token = await new jose.SignJWT({ data })
-      .setProtectedHeader({ alg: "ES256" })
-      .setIssuedAt()
-      .setExpirationTime("2h")
-      .sign(this.secret);
-
+    const token = this.crypt(data);
     this.socket.emit("message", { type, from, to, room, token }, func);
   };
+
+  private crypt(obj: object) {
+    const text = JSON.stringify(obj);
+    return btoa(text);
+  }
+
+  private decrypt(encoded: string) {
+    return JSON.parse(atob(encoded));
+  }
 
   /**
    * Join the room with the provided room_id.
@@ -636,25 +675,6 @@ class Bun extends EventEmitter {
     });
   };
 
-  removePeer = (id: string) => {
-    const peer = this.peers.get(id);
-
-    peer.close();
-    rp("Remote Peer Connection Closed");
-
-    this.peers.delete(id);
-    rp("Remote Peer Removed");
-
-    this.remoteStreams.delete(id);
-    rp("Remote Peer Stream Removed");
-  };
-
-  close = () => {
-    for (const [id, peer] of this.peers) {
-      this.removePeer(id);
-    }
-  };
-
   addMediaTrack = (track: MediaStreamTrack, id?: string) => {
     this.streams.addTrack(track);
     if (id) {
@@ -700,6 +720,35 @@ class Bun extends EventEmitter {
     stream.getTracks().forEach((track) => this.removeMediaTrack(track));
     p("Removed Stream", stream);
   };
+
+  sendData = (message: string, id?: string, type?: string) => {
+    if (id) {
+      this.sendDataChannels.get(id).send(message);
+    } else {
+      for (const [id, sendChannel] of this.sendDataChannels) {
+        sendChannel.send(message);
+      }
+    }
+  };
+
+  removePeer = (id: string) => {
+    const peer = this.peers.get(id);
+
+    peer.close();
+    rp("Remote Peer Connection Closed");
+
+    this.peers.delete(id);
+    rp("Remote Peer Removed");
+
+    this.remoteStreams.delete(id);
+    rp("Remote Peer Stream Removed");
+  };
+
+  close = () => {
+    for (const [id, peer] of this.peers) {
+      this.removePeer(id);
+    }
+  };
 }
 
 interface CustomPeerConnection extends RTCPeerConnection {
@@ -727,9 +776,6 @@ interface Data {
 
 export default Bun;
 
-function token(token: any): (...args: any[]) => void {
-  throw new Error("Function not implemented.");
-}
 /**
  * On Room End,
  * fetch room data from redis,
