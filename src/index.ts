@@ -775,23 +775,3 @@ interface Data {
 }
 
 export default Bun;
-
-/**
- * On Room End,
- * fetch room data from redis,
- * each peer-minute
- * const time = 0
- * peers.forEach(peer => {
- *  if (peer.left) {
- *    time += (peer.left - peer.join)
- *  } else {
- *    time += room.endedAt - room.createdAt
- *  }
- * })
- *
- * Charge for minutes used,
- * const minutes = Math.ceil(time/60000)
- *
- * charge stripe_id, attached with apikey
- * 0.015 * minutes
- */
