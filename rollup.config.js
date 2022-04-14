@@ -9,11 +9,15 @@ import "regenerator-runtime/runtime.js";
 
 export default {
     input: 'src/index.ts',
-    output: {
+    output: [{
         name: 'Bun',
         file: 'dist/bundle.js',
         format: 'iife'
-    },
+    }, {
+        name: 'Bun',
+        file: 'dist/bundle.module.js',
+        format: 'cjs'
+    }],
     plugins: [
         resolve({
             browser: true,
@@ -22,10 +26,6 @@ export default {
         typescript({
             compilerOptions: {
                 downlevelIteration: true,
-                // declaration: true,
-                // outDir: 'dist',
-                // emitDeclarationOnly: true,
-                // isolatedModules: true,
             }
         }),
         builtins(),
