@@ -15,8 +15,8 @@ export default {
         format: 'iife'
     }, {
         name: 'Bun',
-        file: 'dist/bundle.cjs.js',
-        format: 'cjs'
+        file: 'dist/bundle.es.js',
+        format: 'es'
     }],
     plugins: [
         resolve({

@@ -2,11 +2,14 @@
   "name": "6buns-client",
   "version": "1.0.15",
   "description": "Client Library for 6buns",
-  "main": "dist/bundle.module.js",
+  "main": "dist/bundle.es.js",
   "browser": "dist/bundle.iife.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "files": [
+    "dist"
+  ],
   "author": "adtjha",
   "license": "ISC",
   "dependencies": {
