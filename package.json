@@ -3,7 +3,7 @@
   "version": "1.0.17",
   "description": "Client Library for 6buns",
   "main": "dist/bundle.iife.js",
-  "module": "dist/bundle.esm.js",
+  "module": "dist/bundle.es.js",
   "browser": "dist/bundle.iife.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
