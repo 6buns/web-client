@@ -11,7 +11,6 @@ jobs:
         with:
           node-version: 10
       - run: npm install
-      - run: npx rollup --config rollup.config.js
       - uses: JS-DevTools/npm-publish@v1
         with:
           token: ${{ secrets.NPM_AUTH_TOKEN }}
