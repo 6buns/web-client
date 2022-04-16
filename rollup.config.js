@@ -11,26 +11,8 @@ export default {
     input: 'src/index.ts',
     output: [{
         name: 'Bun',
-        file: 'dist/bundle.iife.js',
-        format: 'iife',
-    }, {
-        name: 'Bun',
-        file: 'dist/bundle.iife.min.js',
-        format: 'iife',
-        plugins: [
-            terser(),
-        ]
-    }, {
-        name: 'Bun',
-        file: 'dist/bundle.esm.js',
-        format: 'esm'
-    }, {
-        name: 'Bun',
-        file: 'dist/bundle.esm.min.js',
-        format: 'esm',
-        plugins: [
-            terser(),
-        ]
+        file: 'dist/bundle.js',
+        format: 'iife'
     }],
     plugins: [
         resolve({

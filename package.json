@@ -2,8 +2,7 @@
   "name": "6buns-client",
   "version": "1.0.20",
   "description": "Client Library for 6buns",
-  "main": "dist/bundle.iife.js",
-  "module": "dist/bundle.esm.js",
+  "main": "dist/bundle.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -12,7 +11,7 @@
   ],
   "exports": {
     ".": {
-      "default": "./dist/bundle.esm.js"
+      "import": "./dist/bundle.js"
     }
   },
   "author": "adtjha",

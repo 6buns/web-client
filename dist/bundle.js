@@ -1,4 +1,4 @@
-var Bun = (function (exports) {
+var Bun = (function () {
   'use strict';
 
   function _typeof(obj) {
@@ -6373,10 +6373,6 @@ var Bun = (function (exports) {
       return Bun;
   }(events.exports.EventEmitter));
 
-  exports.Bun = Bun;
+  return Bun;
 
-  Object.defineProperty(exports, '__esModule', { value: true });
-
-  return exports;
-
-})({});
+})();

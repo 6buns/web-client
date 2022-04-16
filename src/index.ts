@@ -774,4 +774,4 @@ interface Data {
   data: object;
 }
 
-export { Bun };
+export default Bun;
