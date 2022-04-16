@@ -1,6 +1,6 @@
 {
   "name": "6buns-client",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "Client Library for 6buns",
   "main": "dist/bundle.iife.js",
   "module": "dist/bundle.esm.js",
