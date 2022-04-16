@@ -12,11 +12,11 @@ export default {
     output: [{
         name: 'Bun',
         file: 'dist/bundle.iife.js',
-        format: 'iife'
+        format: 'iife',
     }, {
         name: 'Bun',
-        file: 'dist/bundle.es.js',
-        format: 'es'
+        file: 'dist/bundle.esm.js',
+        format: 'esm'
     }],
     plugins: [
         resolve({
