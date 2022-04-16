@@ -3,13 +3,18 @@
   "version": "1.0.19",
   "description": "Client Library for 6buns",
   "main": "dist/bundle.iife.js",
-  "module": "dist/bundle.cjs.js",
+  "module": "dist/bundle.esm.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "files": [
     "dist"
   ],
+  "exports": {
+    ".": {
+      "default": "./dist/bundle.esm.js"
+    }
+  },
   "author": "adtjha",
   "license": "ISC",
   "dependencies": {

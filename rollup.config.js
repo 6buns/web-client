@@ -15,8 +15,22 @@ export default {
         format: 'iife',
     }, {
         name: 'Bun',
+        file: 'dist/bundle.iife.min.js',
+        format: 'iife',
+        plugins: [
+            terser(),
+        ]
+    }, {
+        name: 'Bun',
         file: 'dist/bundle.esm.js',
         format: 'esm'
+    }, {
+        name: 'Bun',
+        file: 'dist/bundle.esm.min.js',
+        format: 'esm',
+        plugins: [
+            terser(),
+        ]
     }],
     plugins: [
         resolve({
@@ -35,6 +49,6 @@ export default {
             babelHelpers: "bundled",
             presets: [["@babel/preset-typescript"], ["@babel/preset-env", { "useBuiltIns": "usage" }]],
         }),
-        terser(),
+        // terser(),
     ]
 };
