@@ -31,6 +31,6 @@ export default {
             babelHelpers: "bundled",
             presets: [["@babel/preset-typescript"], ["@babel/preset-env", { "useBuiltIns": "usage" }]],
         }),
-        // terser(),
+        terser(),
     ]
 };

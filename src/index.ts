@@ -463,11 +463,20 @@ class Bun extends EventEmitter {
       this.sendMessage(
         "room-join",
         { room: this.room, data: { name: this.name } },
-        ({ res, error }: { res: Array<keyof Socket>; error: string }) => {
+        ({
+          res,
+          room,
+          error,
+        }: {
+          res: Array<keyof Socket>;
+          room: string;
+          error: string;
+        }) => {
           if (error) {
             this.emit("error", error);
             s("Room Join Error", error);
           } else if (res) {
+            this.room = room;
             s("Room Joined", res);
             if (res.length > 1) {
               s("Peers List Recieved");
