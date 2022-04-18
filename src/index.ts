@@ -54,7 +54,7 @@ class Bun extends EventEmitter {
     this.startMedia(true);
     this.name = btoa(Math.random().toString()).substring(10, 5);
     this.poster = this.createPoster(this.name);
-    this.room = room;
+    this.room = room || "";
     this.buffer = 50;
     this.remoteStreams = new Map();
     this.sendDataChannels = new Map();
@@ -479,6 +479,7 @@ class Bun extends EventEmitter {
             this.room = room;
             s("Room Joined", res);
             if (res.length > 1) {
+              this.emit("room-joined", { res, room });
               s("Peers List Recieved");
               res.forEach((pid) => {
                 if (pid !== this.socket.id) {
