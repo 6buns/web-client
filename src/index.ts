@@ -548,7 +548,10 @@ class Bun extends EventEmitter {
         this.replaceMedia(stream);
         this.addStream(stream);
       })
-      .catch(console.error);
+      .catch((e) => {
+        this.emit("screen-share-error", e);
+        console.error(e);
+      });
 
   addStream = (stream: MediaStream) => {
     const video: HTMLVideoElement = document.querySelector(".self");
