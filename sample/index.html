@@ -14,7 +14,8 @@
       <h1 class="text-8xl font-bold uppercase text-green-50">121</h1>
     </div>
     <main
-      class="flex-grow flex flex-wrap items-center justify-center content-center"
+      id="display"
+      class="hidden flex-grow flex flex-wrap items-center justify-center content-center"
     >
       <div
         class="relative w-80 h-48 bg-white overflow-hidden rounded-2xl shadow-lg m-4 group cursor-pointer"
@@ -26,51 +27,77 @@
           muted
         ></video>
       </div>
-    </main>
-    <div id="buttonRack" class="absolute bottom-8 space-x-4">
-      <button
-        class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
-        id="screen"
-        aria-state="0"
-        onclick="handleClick(this)"
-      >
-        Share Screen
-      </button>
-      <button
-        class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
-        id="audio"
-        aria-state="1"
-        onclick="handleClick(this)"
-      >
-        Stop Audio
-      </button>
-      <button
-        class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
-        id="video"
-        aria-state="1"
-        onclick="handleClick(this)"
-      >
-        Stop Video
-      </button>
-    </div>
-
-    <!-- <template id="video">
-      <div
-        class="relative w-80 h-48 bg-white overflow-hidden rounded-2xl shadow-lg m-4 group cursor-pointer"
-      >
-        <video
-          class="absolute h-full w-full object-cover"
-          class="self"
-          autoplay
-          controls
-          muted
-        ></video>
+      <div id="buttonRack" class="absolute bottom-8 space-x-4">
+        <button
+          class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+          id="screen"
+          aria-state="0"
+          onclick="handleClick(this)"
+        >
+          Share Screen
+        </button>
+        <button
+          class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+          id="audio"
+          aria-state="1"
+          onclick="handleClick(this)"
+        >
+          Stop Audio
+        </button>
+        <button
+          class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+          id="video"
+          aria-state="1"
+          onclick="handleClick(this)"
+        >
+          Stop Video
+        </button>
+        <button
+          type="button"
+          class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+          id="showStat"
+          onclick="handleClick(this)"
+        >
+          👉 Stats
+        </button>
       </div>
-    </template> -->
+    </main>
+
+    <div
+      id="stats"
+      class="w-5/6 flex-grow flex flex-col items-center justify-start content-center mt-32 mb-[5rem] pt-4 overflow-scroll"
+    >
+      <h1 class="text-2xl font-medium text-stone-500">Realtime Stats</h1>
+      <div
+        id="data"
+        class="w-full flex flex-col items-start justify-evenly bg-white p-4"
+      >
+        <h1>
+          Peer Connected to : <span id="peer" class="font-mono">jU2MD</span>
+        </h1>
+        <div class="w-full flex flex-col space-y-2"></div>
+      </div>
+      <div id="buttonRack" class="absolute bottom-8 space-x-4">
+        <button
+          type="button"
+          class="py-1 px-2 bg-white hover:bg-gray-100 rounded-lg shadow-lg disabled:opacity-75 disabled:line-through"
+          id="hideStat"
+          onclick="handleClick(this)"
+        >
+          Back to Screen
+        </button>
+      </div>
+    </div>
 
     <script src="../dist/bundle.js"></script>
 
     <script>
+      const display = document.querySelector("#display");
+      const statScreen = document.querySelector("#stats");
+
+      let statsInterval,
+        updatingStat = new Set();
+
       const findOrCreateVid = (n) => {
         let vid = document.querySelector(`#remote-video-${n.to.name}`);
         if (!vid) {
@@ -99,7 +126,7 @@
       };
 
       const bun = new Bun({
-        secret: "f384d6193",
+        secret: "DEMO",
         room: "abcdef",
       });
 
@@ -107,6 +134,9 @@
 
       bun.on("new-peer", (event) => {
         console.log("New Peer", event);
+        statsInterval = setInterval(() => {
+          bun.getStatsData().then(putData);
+        }, 500);
       });
 
       bun.on("new-remote-track", (event) => {
@@ -117,6 +147,7 @@
       bun.on("peer-left", (to) => {
         console.log("Peer Left", to);
         document.querySelector(`#remote-video-${to}`).remove();
+        clearInterval(statsInterval);
       });
 
       bun.on("error", (error) => console.error(error));
@@ -173,7 +204,99 @@
               break;
             }
           }
+          case "showStat": {
+            statScreen.style.display = "flex";
+            display.style.display = "none";
+            break;
+          }
+          case "hideStat": {
+            statScreen.style.display = "none";
+            display.style.display = "flex";
+            break;
+          }
         }
+      };
+
+      const statsData = JSON.parse(
+        '{"DMyMT":{"media-source":{"id":"RTCVideoSource_8","timestamp":1651035678620.127,"trackIdentifier":"616b31e4-15e4-416e-954b-52490c930a91","kind":"video","width":640,"height":480,"frames":10,"framesPerSecond":18.248175182481752},"certificate":{"id":"RTCCertificate_CE:CA:B3:65:21:E8:22:A8:E6:BA:08:C4:37:51:35:EA:5F:4B:6F:A5:6B:1A:EA:CA:A3:85:D7:6F:36:DF:6D:CC","timestamp":1651035678620.127,"fingerprint":"CE:CA:B3:65:21:E8:22:A8:E6:BA:08:C4:37:51:35:EA:5F:4B:6F:A5:6B:1A:EA:CA:A3:85:D7:6F:36:DF:6D:CC","fingerprintAlgorithm":"sha-256","base64Certificate":"MIIBFjCBvKADAgECAggtfsUdX+7w1DAKBggqhkjOPQQDAjARMQ8wDQYDVQQDDAZXZWJSVEMwHhcNMjIwNDI2MDUwMTE3WhcNMjIwNTI3MDUwMTE3WjARMQ8wDQYDVQQDDAZXZWJSVEMwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAR5zWDqqKp7vQgZota/SSO56MSoY5DjhafjfKjnmTEf4kyPcDYEEmUUkNqoTSkXPhmDd5L26s+ZLHB1MMf5+d7EMAoGCCqGSM49BAMCA0kAMEYCIQC7ADf74jlYlU/SkCdAQ7qO+slAxgU4ndkrAjsQtJGQsQIhAJcwr0v3pMU0oBHTl5mEJW/aWg106PDuiD1ExU7F5mrQ"},"codec":{"id":"RTCCodec_1_Outbound_99","timestamp":1651035678620.127,"transportId":"RTCTransport_0_1","payloadType":99,"mimeType":"video/rtx","clockRate":90000,"sdpFmtpLine":"apt=98"},"data-channel":{"id":"RTCDataChannel_6","timestamp":1651035678620.127,"label":"sendChannel","protocol":"","dataChannelIdentifier":0,"state":"connecting","messagesSent":0,"bytesSent":0,"messagesReceived":0,"bytesReceived":0},"candidate-pair":{"id":"RTCIceCandidatePair_OuToduUW_y52TF3F8","timestamp":1651035678620.127,"transportId":"RTCTransport_0_1","localCandidateId":"RTCIceCandidate_OuToduUW","remoteCandidateId":"RTCIceCandidate_y52TF3F8","state":"succeeded","priority":9115038255631187000,"nominated":true,"writable":true,"packetsSent":8,"packetsReceived":4,"bytesSent":1456,"bytesReceived":1385,"totalRoundTripTime":0.004,"currentRoundTripTime":0,"availableOutgoingBitrate":300000,"requestsReceived":1,"requestsSent":1,"responsesReceived":3,"responsesSent":1,"consentRequestsSent":2,"packetsDiscardedOnSend":0,"bytesDiscardedOnSend":0},"local-candidate":{"id":"RTCIceCandidate_OuToduUW","timestamp":1651035678620.127,"transportId":"RTCTransport_0_1","isRemote":false,"networkType":"wifi","ip":"192.168.1.9","address":"192.168.1.9","port":57407,"protocol":"udp","candidateType":"host","priority":2122260223},"remote-candidate":{"id":"RTCIceCandidate_y52TF3F8","timestamp":1651035678620.127,"transportId":"RTCTransport_0_1","isRemote":true,"ip":"192.168.1.9","address":"192.168.1.9","port":42253,"protocol":"udp","candidateType":"host","priority":2122260223},"inbound-rtp":{"id":"RTCInboundRTPVideoStream_2724507575","timestamp":1651035678620.127,"ssrc":2724507575,"kind":"video","trackId":"RTCMediaStreamTrack_receiver_8","transportId":"RTCTransport_0_1","mediaType":"video","jitter":0,"packetsLost":0,"packetsReceived":0,"bytesReceived":0,"headerBytesReceived":0,"jitterBufferDelay":0,"jitterBufferEmittedCount":0,"framesReceived":0,"framesDecoded":0,"keyFramesDecoded":0,"framesDropped":0,"totalDecodeTime":0,"totalInterFrameDelay":0,"totalSquaredInterFrameDelay":0,"decoderImplementation":"unknown","firCount":0,"pliCount":0,"nackCount":0},"track":{"id":"RTCMediaStreamTrack_sender_8","timestamp":1651035678620.127,"trackIdentifier":"616b31e4-15e4-416e-954b-52490c930a91","mediaSourceId":"RTCVideoSource_8","remoteSource":false,"ended":false,"detached":false,"kind":"video","frameWidth":0,"frameHeight":0,"framesSent":0,"hugeFramesSent":0},"stream":{"id":"RTCMediaStream_bfjgKT6IgBGKGdzBNkbHNg2r7wP9BVIcMHvt","timestamp":1651035678620.127,"streamIdentifier":"bfjgKT6IgBGKGdzBNkbHNg2r7wP9BVIcMHvt","trackIds":["RTCMediaStreamTrack_sender_7","RTCMediaStreamTrack_sender_8"]},"outbound-rtp":{"id":"RTCOutboundRTPVideoStream_1777635190","timestamp":1651035678620.127,"ssrc":1777635190,"kind":"video","trackId":"RTCMediaStreamTrack_sender_8","transportId":"RTCTransport_0_1","codecId":"RTCCodec_1_Outbound_96","mediaType":"video","mediaSourceId":"RTCVideoSource_8","packetsSent":0,"retransmittedPacketsSent":0,"bytesSent":0,"headerBytesSent":0,"retransmittedBytesSent":0,"framesEncoded":0,"keyFramesEncoded":0,"totalEncodeTime":0,"totalEncodedBytesTarget":0,"framesSent":0,"hugeFramesSent":0,"totalPacketSendDelay":0,"qualityLimitationReason":"none","qualityLimitationDurations":{"other":0,"cpu":0,"bandwidth":0,"none":0.573},"qualityLimitationResolutionChanges":0,"encoderImplementation":"unknown","firCount":0,"pliCount":0,"nackCount":0},"peer-connection":{"id":"RTCPeerConnection","timestamp":1651035678620.127,"dataChannelsOpened":0,"dataChannelsClosed":0},"transport":{"id":"RTCTransport_0_1","timestamp":1651035678620.127,"bytesSent":1456,"packetsSent":8,"bytesReceived":1385,"packetsReceived":4,"dtlsState":"connected","selectedCandidatePairId":"RTCIceCandidatePair_OuToduUW_y52TF3F8","localCertificateId":"RTCCertificate_11:CC:B1:35:4E:96:70:E2:42:43:E1:48:CB:87:43:99:C6:42:36:54:EE:9D:32:55:BA:59:7C:0A:3B:F7:96:1B","remoteCertificateId":"RTCCertificate_CE:CA:B3:65:21:E8:22:A8:E6:BA:08:C4:37:51:35:EA:5F:4B:6F:A5:6B:1A:EA:CA:A3:85:D7:6F:36:DF:6D:CC","tlsVersion":"FEFD","dtlsCipher":"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256","srtpCipher":"AES_CM_128_HMAC_SHA1_80","selectedCandidatePairChanges":1}}}'
+      );
+
+      const putData = (stats) => {
+        let bodyHTML = ``,
+          subHTML = "",
+          dataHTML = ``,
+          lastValue;
+        for (const peer in stats) {
+          if (Object.hasOwnProperty.call(stats, peer)) {
+            const stat = stats[peer];
+            if (document.querySelector("#peer").innerHTML !== peer) {
+              document.querySelector("#peer").innerHTML = peer;
+            }
+            for (const key in stat) {
+              if (Object.hasOwnProperty.call(stat, key)) {
+                const thisStat = stat[key];
+                try {
+                  document.querySelector(`#${key}`).innerHTML;
+                } catch (error) {
+                  document.querySelector(`#data`).children[1].innerHTML += `
+                  <div id="${key}">
+                    <h1 class="text-xl font-bold capitalize">${key}</h1>
+                    <div id="data" class="w-full grid grid-cols-[repeat(auto-fit,_minmax(240px,_1fr))] gap-2">
+                    </div>
+                  </div>
+                `;
+                }
+
+                for (const type in stat[key]) {
+                  if (Object.hasOwnProperty.call(stat[key], type)) {
+                    const value = stat[key][type];
+                    try {
+                      lastValue = document.querySelector(
+                        `#${type}.${key}`
+                      ).innerHTML;
+                    } catch (error) {
+                      const html = `
+                        <div title="${value}" class="max-w-sm bg-stone-100 p-2 flex flex-col items-center justify-center">
+                          <span id="${type}" class="${key} w-[14rem] text-lg text-center font-mono truncate break-all">${value}</span>
+                          <span class="uppercase text-xs text-center text-stone-500 font-medium">${type}</span>
+                        </div>
+                      `;
+                      console.log(key);
+                      document
+                        .querySelector(`#${key}`)
+                        .querySelector("#data").innerHTML += html;
+                      lastValue = value;
+                    }
+                    const valueSimilar = isSameValue(lastValue, value);
+                    if (!valueSimilar) {
+                      document.querySelector(`#${type}.${key}`).innerHTML =
+                        value;
+                      updatingStat.add(`${type}_${key}`);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const isSameValue = (lastValue, value) => {
+        // convert to number if !NaN
+        if (!(typeof lastValue === "string" && typeof value === "string"))
+          return false;
+        if (isNaN(lastValue) && isNaN(value)) {
+          const lastValueArr = lastValue.split("");
+          const valueArr = value.split("");
+          if (lastValue.split("").length === value.split("").length) {
+            return lastValueArr.every((e, i) => e === valueArr[i]);
+          } else return false;
+        } else {
+          lastValue = parseFloat(lastValue);
+          value = parseFloat(value);
+          return lastValue === value;
+        }
+        return false;
       };
     </script>
   </body>

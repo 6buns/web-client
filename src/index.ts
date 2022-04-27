@@ -425,11 +425,27 @@ class Bun extends EventEmitter {
     s("Socket ID updated for peer.");
   };
 
-  getStats = () => {
+  getStatsData = () => {
     return new Promise<object>(async (resolve, reject) => {
       const statsData = {};
       for (const [id, peer] of this.peers) {
-        statsData[id] = await peer.getStats(null);
+        statsData[id] = {};
+        const stats = await peer.getStats(null);
+        stats.forEach((report: RTCStats) => {
+          statsData[id][report.type] = {
+            id: report.id,
+            timestamp: report.timestamp,
+          };
+          Object.keys(report).forEach((statName) => {
+            if (
+              statName !== "id" &&
+              statName !== "timestamp" &&
+              statName !== "type"
+            ) {
+              statsData[id][report.type][statName] = report[statName];
+            }
+          });
+        });
       }
       resolve(statsData);
     });

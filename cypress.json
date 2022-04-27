@@ -1,0 +1,9 @@
+{
+  "env": {
+    "browserPermissions": {
+      "microphone": "allow",
+      "camera": "allow",
+      "sound": "allow"
+    }
+  }
+}
